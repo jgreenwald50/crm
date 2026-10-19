@@ -71,6 +71,10 @@ dialog::backdrop{background:#0008}
 .srow input[type=search]{width:50%}
 .addbtn{width:40px;height:40px;flex:none;border-radius:10px;font-size:26px;line-height:1;border:0;background:var(--accent);color:var(--accent-ink);padding:0}
 .addbtn:disabled{opacity:.4;cursor:not-allowed}
+.srow select{width:auto;flex:none;max-width:190px}
+@media(max-width:600px){.srow select{max-width:118px}}
+.nav{display:flex;justify-content:space-between;align-items:center;gap:8px;position:sticky;top:0;background:var(--card);padding:2px 0 6px;z-index:2}
+.navpos{color:var(--mute);font-size:13px}
 @media(max-width:600px){.srow input[type=search]{width:auto;flex:1}}
 menu{margin:0;padding:6px;list-style:none;position:absolute;right:12px;top:48px;background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 20px #0003;display:none;z-index:10;min-width:200px}
 menu button{display:block;width:100%;text-align:left;border:0;background:none;padding:9px 12px;border-radius:6px}
@@ -97,6 +101,7 @@ menu button:hover{background:var(--chip)}
   <div class="srow">
     <button class="addbtn" id="fab" aria-label="Add contact" title="Add contact">+</button>
     <input type="search" id="q" placeholder="Search name or company" autocomplete="off">
+    <select id="sortSel" title="Sort order" aria-label="Sort order"></select>
   </div>
   <div class="chips" id="chips"></div>
 </header>
@@ -212,12 +217,15 @@ const GitHubStore = {
 
 /* ============================== state ============================== */
 const store = CFG.GITHUB_REPO ? GitHubStore : LocalStore;
+const SORTS = [["date", "Next action date"], ["priority", "Priority"], ["name", "Name A–Z"], ["last", "Last name A–Z"],
+               ["company", "Company A–Z"], ["updated", "Recently updated"], ["stale", "Not touched longest"]];
+function loadSort(){ try { const v = localStorage.getItem("crm.sort"); return SORTS.some(x => x[0] === v) ? v : "date"; } catch(e){ return "date"; } }
 // Tell password managers (1Password, LastPass, Bitwarden) and the browser not to offer to fill these fields.
 function noAutofill(root){ root.querySelectorAll("input,textarea,select").forEach(el => {
   el.setAttribute("autocomplete", "off"); el.setAttribute("name", "f" + Math.random().toString(36).slice(2, 8)); el.setAttribute("data-1p-ignore", ""); el.setAttribute("data-lpignore", "true"); el.setAttribute("data-bwignore", "true"); el.setAttribute("data-form-type", "other"); }); }
 // A reload (F5) keeps the same id, so this tab reclaims its own lock; another tab or device gets a different id.
 function sessionId(){ try { let v = sessionStorage.getItem("crm.sid"); if (!v) { v = newId(); sessionStorage.setItem("crm.sid", v); } return v; } catch(e){ return newId(); } }
-const S = {data: null, etag: null, readOnly: false, view: "list", month: new Date(), selDay: null,
+const S = {sort: loadSort(), data: null, etag: null, readOnly: false, view: "list", month: new Date(), selDay: null,
            prios: new Set(), due: false, archived: false, q: "", saving: 0, session: sessionId()};
 const LOCK_TTL = store.lockTtl || 150000, HEARTBEAT = store.heartbeat || 45000;
 const deviceLabel = /Android|iPhone|Mobile/i.test(navigator.userAgent) ? "your phone" : "your computer";
@@ -279,14 +287,27 @@ function visible({ignoreDue, ignorePrio} = {}){
     (S.archived ? c.priority === 99 : c.priority !== 99) && matchesText(c, S.q) && (ignorePrio || matchesPrio(c)) &&
     (ignoreDue || !S.due || (c.nextDate && c.nextDate <= t)));
 }
-function sortList(a){
-  return a.sort((x, y) => (x.nextDate || "9999") < (y.nextDate || "9999") ? -1 : (x.nextDate || "9999") > (y.nextDate || "9999") ? 1 : x.priority - y.priority || x.name.localeCompare(y.name));
+function sortList(a, mode = S.sort){
+  const dk = c => c.nextDate || "9999-99-99", cs = (x, y) => x.localeCompare(y, undefined, {sensitivity: "base"});
+  const byName = (x, y) => cs(x.name, y.name), byDate = (x, y) => dk(x) < dk(y) ? -1 : dk(x) > dk(y) ? 1 : 0;
+  const lastName = c => c.name.trim().split(/\s+/).pop() || "";
+  const cmp = {
+    date: (x, y) => byDate(x, y) || x.priority - y.priority || byName(x, y),                  // soonest first, undated last
+    priority: (x, y) => x.priority - y.priority || byDate(x, y) || byName(x, y),               // P0, P1, P2 ... then soonest
+    name: byName,
+    last: (x, y) => cs(lastName(x), lastName(y)) || byName(x, y),
+    company: (x, y) => (!x.company) - (!y.company) || cs(x.company, y.company) || byName(x, y), // blank companies last
+    updated: (x, y) => (y.updated || "").localeCompare(x.updated || "") || byName(x, y),       // newest changes first
+    stale: (x, y) => (x.updated || "").localeCompare(y.updated || "") || byName(x, y)          // never/longest untouched first
+  }[mode] || byName;
+  return a.sort(cmp);
 }
 
 /* ============================== rendering ============================== */
 function render(){
   if (!S.data) { $("#view").innerHTML = `<div class="empty">Loading…</div>`; return; }
   renderBanner(); renderChips();
+  $("#sortSel").style.display = S.view === "list" ? "" : "none";
   $("#fab").disabled = S.readOnly; $("#btnResched").disabled = S.readOnly;
   $("#tabList").classList.toggle("on", S.view === "list"); $("#tabCal").classList.toggle("on", S.view === "cal");
   if (!S.data.contacts.length) { $("#view").innerHTML = `<div class="empty">No contacts yet.<br><br><button class="btn primary" id="emptyImport">Import your contacts (Excel or CSV)</button></div>`; $("#emptyImport").onclick = () => $("#file").click(); return; }
@@ -338,7 +359,7 @@ function renderCal(){
       ev.slice(0,4).map(c => `<div class="ev" data-id="${c.id}">${esc(c.name)}</div>`).join("") + (ev.length>4 ? `<div class="more">+${ev.length-4} more</div>` : "") +
       (ev.length ? `<div class="dots">${ev.slice(0,6).map(()=>"<i></i>").join("")}</div>` : "") + `</div>`;
   }
-  const sel = S.selDay ? sortList(byDay[S.selDay] ? [...byDay[S.selDay]] : []) : [];
+  const sel = S.selDay ? sortList(byDay[S.selDay] ? [...byDay[S.selDay]] : [], "date") : [];
   $("#view").innerHTML = `<div class="row" style="margin-top:6px"><button class="btn" id="prevM">‹</button><b class="grow" style="text-align:center">${m.toLocaleString(undefined,{month:"long",year:"numeric"})}</b><button class="btn" id="todayM">Today</button><button class="btn" id="nextM">›</button></div>` +
     `<div class="cal">${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>`<div class="dow">${d}</div>`).join("")}${cells}</div>` +
     (S.selDay ? `<div class="count">${fmtDate(S.selDay)} — ${sel.length} scheduled</div>${sel.map(cardHtml).join("")}` : "");
@@ -348,20 +369,28 @@ function renderCal(){
 }
 
 /* ============================== edit form ============================== */
+// The contacts, in the order they are currently displayed, for the Prev/Next buttons in the edit form.
+function navIds(el){
+  if (S.view === "list") return sortList(visible()).map(c => c.id);
+  const cell = el.closest("[data-day]"), k = cell ? cell.dataset.day : S.selDay;      // calendar: the people listed for that day
+  return sortList(visible({ignoreDue: true}).filter(c => c.nextDate === k), "date").map(c => c.id);
+}
 function fmtPhone(v){ let d = v.replace(/\D/g, ""); if (d.length === 11 && d[0] === "1") d = d.slice(1); return d.length === 10 ? `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}` : v; }
-function openForm(id){
-  const isNew = !id, c = isNew ? {id: newId(), name:"", company:"", email:"", phone:"", priority:1, nextDate:"", nextAction:"", lastInteraction:"", history:"", updated:""} : S.data.contacts.find(x => x.id === id);
+function openForm(id, ids){
+  const isNew = !id, c = isNew ? {id: newId(), name:"", company:"", email:"", phone:"", priority:0, nextDate:"", nextAction:"", lastInteraction:"", history:"", updated:""} : S.data.contacts.find(x => x.id === id);
   if (!c) return;
   const ro = S.readOnly ? "disabled" : "";
   const prOpts = [...Array(11).keys(), 99].map(p => `<option value="${p}" ${p===c.priority?"selected":""}>${p===99?"99 (archived)":p}</option>`).join("");
+  const idx = !isNew && ids ? ids.indexOf(id) : -1, showNav = idx >= 0 && ids.length > 1;
   const dlg = $("#dlg");
   dlg.innerHTML = `<form method="dialog" class="form" id="f" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true"><div id="sink" tabindex="-1" style="grid-column:1/-1;height:0;margin-bottom:-10px;outline:none"></div>
+    ${showNav ? `<div class="full nav"><button type="button" class="btn" id="navPrev" ${idx === 0 ? "disabled" : ""}>‹ Prev</button><span class="navpos">${idx + 1} of ${ids.length}</span><button type="button" class="btn" id="navNext" ${idx === ids.length - 1 ? "disabled" : ""}>Next ›</button></div>` : ""}
     <div><label>Name</label><input type="text" id="fName" value="${esc(c.name)}" ${ro} required></div>
     <div><label>Company</label><input type="text" id="fCo" value="${esc(c.company)}" ${ro}></div>
     <div><label>Email <a class="lnk" id="mailLnk" href="#">Send</a></label><input type="text" inputmode="email" id="fEmail" value="${esc(c.email)}" ${ro}></div>
     <div><label>Phone <a class="lnk" id="telLnk" href="#">Call</a></label><input type="text" inputmode="tel" id="fPhone" value="${esc(c.phone)}" ${ro}><div class="hint" id="phHint"></div></div>
-    <div><label>Priority</label><select id="fPrio" ${ro}>${prOpts}</select></div>
-    <div><label>Next action date</label><input type="date" id="fDate" value="${esc(c.nextDate||"")}" ${ro}></div>
+    <div><label>Priority</label><select id="fPrio" ${ro} required>${prOpts}</select></div>
+    <div><label>Next action date <a class="lnk" id="clrDate" href="#">Clear</a></label><input type="date" id="fDate" value="${esc(c.nextDate||"")}" ${ro}></div>
     <div class="full"><label>Next action</label><input type="text" id="fAct" value="${esc(c.nextAction)}" ${ro}></div>
     <div class="full"><label>Last interaction <a class="lnk" id="addDate" href="#">+ date (Ctrl+D)</a></label><textarea id="fLast" rows="6" ${ro}>${esc(c.lastInteraction)}</textarea></div>
     <div class="full"><label>History</label><textarea id="fHist" rows="4" ${ro}>${esc(c.history)}</textarea></div>
@@ -383,17 +412,28 @@ function openForm(id){
   g("#addDate").onclick = e => { e.preventDefault(); if (!S.readOnly) addDate(); };
   g("#fLast").onkeydown = e => { if (e.ctrlKey && e.key.toLowerCase() === "d") { e.preventDefault(); if (!S.readOnly) addDate(); } };
   g("#fCancel").onclick = () => dlg.close();
+  g("#clrDate").onclick = e => { e.preventDefault(); if (!S.readOnly) g("#fDate").value = ""; };
+  // Priority 9: the contact's name is also the company (asks first if a different company is already there).
+  g("#fPrio").onchange = () => { if (g("#fPrio").value !== "9") return;
+    const nm = g("#fName").value.trim(), co = g("#fCo").value.trim();
+    if (nm && co !== nm && (!co || confirm(`Replace the company "${co}" with "${nm}"?`))) g("#fCo").value = nm; };
   const arch = g("#fArch"); if (arch) arch.onclick = async () => { if (c.priority === 99) return; if (confirm("Archive this contact (priority 99)?")) { dlg.close(); await mutate(d => { const x = d.contacts.find(z => z.id === c.id); x.priority = 99; x.updated = nowIso(); }); } };
-  g("#f").onsubmit = async e => {
-    e.preventDefault(); if (S.readOnly) return;
-    const next = {name: g("#fName").value.trim(), company: g("#fCo").value.trim(), email: g("#fEmail").value.trim(), phone: fmtPhone(g("#fPhone").value.trim()),
+  const collect = () => {
+    const n = {name: g("#fName").value.trim(), company: g("#fCo").value.trim(), email: g("#fEmail").value.trim(), phone: fmtPhone(g("#fPhone").value.trim()),
       priority: Number(g("#fPrio").value), nextDate: g("#fDate").value || null, nextAction: g("#fAct").value.trim(), lastInteraction: g("#fLast").value, history: g("#fHist").value};
-    if (!next.name) return;
-    const changed = isNew || Object.keys(next).some(k => (next[k] ?? "") !== (c[k] ?? ""));
-    dlg.close();
-    if (!changed) return;
-    await mutate(d => { let x = d.contacts.find(z => z.id === c.id); if (!x) { x = {id: c.id}; d.contacts.push(x); } Object.assign(x, next, {updated: nowIso()}); });
-  };
+    if (n.priority === 9 && !n.company) n.company = n.name;
+    return n; };
+  const changedFrom = n => isNew || Object.keys(n).some(k => (n[k] ?? "") !== (c[k] ?? ""));
+  const saveForm = async () => {          // true = saved or nothing to save; false = stay on this contact
+    if (!g("#f").reportValidity()) return false;
+    const n = collect(); if (!n.name) return false;
+    if (!changedFrom(n)) return true;
+    return await mutate(d => { let x = d.contacts.find(z => z.id === c.id); if (!x) { x = {id: c.id}; d.contacts.push(x); } Object.assign(x, n, {updated: nowIso()}); }); };
+  g("#f").onsubmit = async e => { e.preventDefault(); if (S.readOnly) return; if (await saveForm()) dlg.close(); };
+  if (showNav) { const go = async step => {   // Prev/Next: save any edits first, then open the neighbour in the displayed order
+      if (!S.readOnly && !(await saveForm())) return;
+      dlg.close(); openForm(ids[idx + step], ids); };
+    g("#navPrev").onclick = () => go(-1); g("#navNext").onclick = () => go(1); }
 }
 
 /* ============================== actions ============================== */
@@ -489,9 +529,11 @@ $("#chips").onclick = e => { const b = e.target.closest(".chip"); if (!b) return
   if (b.hasAttribute("data-due")) S.due = !S.due; else if (b.hasAttribute("data-arch")) S.archived = !S.archived;
   else { const p = Number(b.dataset.p); S.prios.has(p) ? S.prios.delete(p) : S.prios.add(p); } render(); };
 $("#view").onclick = e => {
-  const card = e.target.closest("[data-id]"); if (card) { e.stopPropagation(); openForm(card.dataset.id); return; }
+  const card = e.target.closest("[data-id]"); if (card) { e.stopPropagation(); openForm(card.dataset.id, navIds(card)); return; }
   const day = e.target.closest("[data-day]"); if (day) { S.selDay = day.dataset.day; renderCal(); }
 };
+$("#sortSel").innerHTML = SORTS.map(([v, l]) => `<option value="${v}">Sort: ${l}</option>`).join(""); $("#sortSel").value = S.sort;
+$("#sortSel").onchange = e => { S.sort = e.target.value; try { localStorage.setItem("crm.sort", S.sort); } catch(_) {} render(); };
 $("#tabList").onclick = () => { S.view = "list"; render(); };
 $("#tabCal").onclick = () => { S.view = "cal"; render(); };
 $("#fab").onclick = () => openForm(null);
