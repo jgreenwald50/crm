@@ -148,21 +148,31 @@ const GitHubStore = {
   },
   async init(){
     while (true) {
-      if (this.token) { const r = await this.api("").catch(() => null);
+      var problem = "";
+      if (this.token) {
+        const r = await this.api("").catch(() => null);
         if (r && r.ok) return;
-        var problem = !r ? "Could not reach GitHub (are you online?)" : r.status === 401 ? "GitHub rejected that key — it may be mistyped or expired." : r.status === 404 ? "That key can't see the repository " + this.repo + ". Check the key's repository access." : "GitHub error " + r.status;
-        if (!r || r.status >= 500) throw new Error(problem);
-        try { localStorage.removeItem("crm.ghtoken"); } catch(e){} }
+        if (!r) throw new Error("Could not reach GitHub (are you online?)");
+        let msg = ""; try { msg = (await r.json()).message || ""; } catch(e){}
+        const t = this.token;
+        problem = (r.status === 401 ? "GitHub rejected that key" : r.status === 404 ? "That key can't see the repository " + this.repo : "GitHub error") +
+          ` — status ${r.status}${msg ? ', GitHub says: "' + msg + '"' : ""}. (Key length ${t.length}, starts with "${t.slice(0, 11)}".)`;
+        if (r.status >= 500) throw new Error(problem);
+        try { localStorage.removeItem("crm.ghtoken"); } catch(e){}
+      }
       await this.askToken(problem);
     }
   },
   askToken(problem){
     return new Promise(res => { const dlg = $("#dlg");
       dlg.innerHTML = `<form method="dialog" class="form" id="tk"><div class="full"><b>Connect to your private data repository</b><p style="margin:6px 0;color:var(--mute)">Paste the access key you created on GitHub (it starts with <code>github_pat_</code>). It is stored only on this device.</p>
-        ${problem ? `<div class="hint">${esc(problem)}</div>` : ""}<input type="password" id="tkIn" placeholder="github_pat_…" autocomplete="off" style="margin-top:8px"></div>
+        ${problem ? `<div class="hint">${esc(problem)}</div>` : ""}<input type="password" id="tkIn" placeholder="github_pat_…" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore name="crm-access-key" style="margin-top:8px">
+        <label style="margin-top:6px"><input type="checkbox" id="tkShow" style="width:auto"> Show the key while I paste it</label></div>
         <div class="full acts"><span class="sp"></span><button class="btn primary" type="submit">Connect</button></div></form>`;
       dlg.addEventListener("cancel", e => e.preventDefault(), {once: true}); dlg.showModal();
-      $("#tk").onsubmit = e => { e.preventDefault(); const v = $("#tkIn").value.trim(); if (!v) return; try { localStorage.setItem("crm.ghtoken", v); } catch(e){} dlg.close(); res(); }; });
+      $("#tkShow").onchange = e => { $("#tkIn").type = e.target.checked ? "text" : "password"; };
+      // (the key is cleaned of spaces, line breaks and invisible characters)
+      $("#tk").onsubmit = e => { e.preventDefault(); const v = $("#tkIn").value.replace(/[^A-Za-z0-9_]/g, ""); if (!v) return; try { localStorage.setItem("crm.ghtoken", v); } catch(e){} dlg.close(); res(); }; });
   },
   b64dec(b64){ const bin = atob(b64.replace(/\n/g, "")); return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))); },
   b64enc(str){ const bytes = new TextEncoder().encode(str); let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(bin); },
