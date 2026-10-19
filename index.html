@@ -67,8 +67,11 @@ dialog::backdrop{background:#0008}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#1c2630;color:#fff;border-radius:10px;padding:10px 14px;display:none;gap:12px;align-items:center;z-index:20;max-width:92vw}
 #toast button{background:none;border:0;color:#8cc4ff;font-weight:700}
 .empty{text-align:center;color:var(--mute);padding:40px 10px}
-.fab{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));width:54px;height:54px;border-radius:50%;font-size:28px;line-height:1;border:0;background:var(--accent);color:var(--accent-ink);box-shadow:0 3px 10px #0004;z-index:6}
-.fab:disabled{opacity:.4}
+.srow{display:flex;gap:8px;align-items:center;margin-top:8px}
+.srow input[type=search]{width:50%}
+.addbtn{width:40px;height:40px;flex:none;border-radius:10px;font-size:26px;line-height:1;border:0;background:var(--accent);color:var(--accent-ink);padding:0}
+.addbtn:disabled{opacity:.4;cursor:not-allowed}
+@media(max-width:600px){.srow input[type=search]{width:auto;flex:1}}
 menu{margin:0;padding:6px;list-style:none;position:absolute;right:12px;top:48px;background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 20px #0003;display:none;z-index:10;min-width:200px}
 menu button{display:block;width:100%;text-align:left;border:0;background:none;padding:9px 12px;border-radius:6px}
 menu button:hover{background:var(--chip)}
@@ -91,8 +94,9 @@ menu button:hover{background:var(--chip)}
     <button data-act="reload">Reload latest data</button>
     <button data-act="signout">Disconnect this device</button>
   </menu>
-  <div class="row" style="margin-top:8px">
-    <input class="grow" type="search" id="q" placeholder="Search name or company" autocomplete="off">
+  <div class="srow">
+    <button class="addbtn" id="fab" aria-label="Add contact" title="Add contact">+</button>
+    <input type="search" id="q" placeholder="Search name or company" autocomplete="off">
   </div>
   <div class="chips" id="chips"></div>
 </header>
@@ -100,7 +104,6 @@ menu button:hover{background:var(--chip)}
   <div id="banner"></div>
   <div id="view"></div>
 </main>
-<button class="fab" id="fab" aria-label="Add contact">+</button>
 <dialog id="dlg"></dialog>
 <div id="toast"><span id="toastMsg"></span><button id="toastBtn" style="display:none"></button></div>
 <input type="file" id="file" accept=".xlsx,.xlsm,.xls,.csv,.json" hidden>
@@ -209,6 +212,9 @@ const GitHubStore = {
 
 /* ============================== state ============================== */
 const store = CFG.GITHUB_REPO ? GitHubStore : LocalStore;
+// Tell password managers (1Password, LastPass, Bitwarden) and the browser not to offer to fill these fields.
+function noAutofill(root){ root.querySelectorAll("input,textarea,select").forEach(el => {
+  el.setAttribute("autocomplete", "off"); el.setAttribute("data-1p-ignore", ""); el.setAttribute("data-lpignore", "true"); el.setAttribute("data-bwignore", "true"); el.setAttribute("data-form-type", "other"); }); }
 // A reload (F5) keeps the same id, so this tab reclaims its own lock; another tab or device gets a different id.
 function sessionId(){ try { let v = sessionStorage.getItem("crm.sid"); if (!v) { v = newId(); sessionStorage.setItem("crm.sid", v); } return v; } catch(e){ return newId(); } }
 const S = {data: null, etag: null, readOnly: false, view: "list", month: new Date(), selDay: null,
@@ -365,6 +371,7 @@ function openForm(id){
       <span class="sp"></span><button type="button" class="btn" id="fCancel">Cancel</button><button type="submit" class="btn primary" id="fSave" ${ro}>Save</button>
     </div></form>`;
   dlg.showModal();
+  noAutofill(dlg);
   const g = s => $(s, dlg);
   const phoneCheck = () => { const d = g("#fPhone").value.replace(/\D/g,""); g("#phHint").textContent = g("#fPhone").value && ![10,11].includes(d.length) ? "Expected 10 digits" : ""; };
   g("#fPhone").onblur = () => { g("#fPhone").value = fmtPhone(g("#fPhone").value); phoneCheck(); };
@@ -500,6 +507,7 @@ $("#file").onchange = e => { if (e.target.files[0]) importFile(e.target.files[0]
 document.addEventListener("visibilitychange", () => { if (!document.hidden && S.data && !S.saving) loadAll(); });
 addEventListener("pagehide", () => { if (!S.readOnly) store.dropLock(); });
 setInterval(heartbeat, HEARTBEAT);
+noAutofill(document);
 
 (async function start(){
   try {
