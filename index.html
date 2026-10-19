@@ -214,7 +214,7 @@ const GitHubStore = {
 const store = CFG.GITHUB_REPO ? GitHubStore : LocalStore;
 // Tell password managers (1Password, LastPass, Bitwarden) and the browser not to offer to fill these fields.
 function noAutofill(root){ root.querySelectorAll("input,textarea,select").forEach(el => {
-  el.setAttribute("autocomplete", "off"); el.setAttribute("data-1p-ignore", ""); el.setAttribute("data-lpignore", "true"); el.setAttribute("data-bwignore", "true"); el.setAttribute("data-form-type", "other"); }); }
+  el.setAttribute("autocomplete", "off"); el.setAttribute("name", "f" + Math.random().toString(36).slice(2, 8)); el.setAttribute("data-1p-ignore", ""); el.setAttribute("data-lpignore", "true"); el.setAttribute("data-bwignore", "true"); el.setAttribute("data-form-type", "other"); }); }
 // A reload (F5) keeps the same id, so this tab reclaims its own lock; another tab or device gets a different id.
 function sessionId(){ try { let v = sessionStorage.getItem("crm.sid"); if (!v) { v = newId(); sessionStorage.setItem("crm.sid", v); } return v; } catch(e){ return newId(); } }
 const S = {data: null, etag: null, readOnly: false, view: "list", month: new Date(), selDay: null,
@@ -355,11 +355,11 @@ function openForm(id){
   const ro = S.readOnly ? "disabled" : "";
   const prOpts = [...Array(11).keys(), 99].map(p => `<option value="${p}" ${p===c.priority?"selected":""}>${p===99?"99 (archived)":p}</option>`).join("");
   const dlg = $("#dlg");
-  dlg.innerHTML = `<form method="dialog" class="form" id="f" autocomplete="off">
+  dlg.innerHTML = `<form method="dialog" class="form" id="f" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true"><div id="sink" tabindex="-1" style="grid-column:1/-1;height:0;margin-bottom:-10px;outline:none"></div>
     <div><label>Name</label><input type="text" id="fName" value="${esc(c.name)}" ${ro} required></div>
     <div><label>Company</label><input type="text" id="fCo" value="${esc(c.company)}" ${ro}></div>
-    <div><label>Email <a class="lnk" id="mailLnk" href="#">Send</a></label><input type="email" id="fEmail" value="${esc(c.email)}" ${ro}></div>
-    <div><label>Phone <a class="lnk" id="telLnk" href="#">Call</a></label><input type="tel" id="fPhone" value="${esc(c.phone)}" ${ro}><div class="hint" id="phHint"></div></div>
+    <div><label>Email <a class="lnk" id="mailLnk" href="#">Send</a></label><input type="text" inputmode="email" id="fEmail" value="${esc(c.email)}" ${ro}></div>
+    <div><label>Phone <a class="lnk" id="telLnk" href="#">Call</a></label><input type="text" inputmode="tel" id="fPhone" value="${esc(c.phone)}" ${ro}><div class="hint" id="phHint"></div></div>
     <div><label>Priority</label><select id="fPrio" ${ro}>${prOpts}</select></div>
     <div><label>Next action date</label><input type="date" id="fDate" value="${esc(c.nextDate||"")}" ${ro}></div>
     <div class="full"><label>Next action</label><input type="text" id="fAct" value="${esc(c.nextAction)}" ${ro}></div>
@@ -372,6 +372,7 @@ function openForm(id){
     </div></form>`;
   dlg.showModal();
   noAutofill(dlg);
+  $("#sink", dlg)?.focus();   // keep focus off the first field so password managers do not pop up on open
   const g = s => $(s, dlg);
   const phoneCheck = () => { const d = g("#fPhone").value.replace(/\D/g,""); g("#phHint").textContent = g("#fPhone").value && ![10,11].includes(d.length) ? "Expected 10 digits" : ""; };
   g("#fPhone").onblur = () => { g("#fPhone").value = fmtPhone(g("#fPhone").value); phoneCheck(); };
