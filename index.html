@@ -209,8 +209,10 @@ const GitHubStore = {
 
 /* ============================== state ============================== */
 const store = CFG.GITHUB_REPO ? GitHubStore : LocalStore;
+// A reload (F5) keeps the same id, so this tab reclaims its own lock; another tab or device gets a different id.
+function sessionId(){ try { let v = sessionStorage.getItem("crm.sid"); if (!v) { v = newId(); sessionStorage.setItem("crm.sid", v); } return v; } catch(e){ return newId(); } }
 const S = {data: null, etag: null, readOnly: false, view: "list", month: new Date(), selDay: null,
-           prios: new Set(), due: false, archived: false, q: "", saving: 0, session: newId()};
+           prios: new Set(), due: false, archived: false, q: "", saving: 0, session: sessionId()};
 const LOCK_TTL = store.lockTtl || 150000, HEARTBEAT = store.heartbeat || 45000;
 const deviceLabel = /Android|iPhone|Mobile/i.test(navigator.userAgent) ? "your phone" : "your computer";
 
