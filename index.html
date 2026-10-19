@@ -88,8 +88,8 @@ menu button:hover{background:var(--chip)}
     <button data-act="export">Export backup (JSON)</button>
     <button data-act="csv">Export CSV</button>
     <button data-act="import">Import Excel / CSV…</button>
-    <button data-act="reload">Reload from OneDrive</button>
-    <button data-act="signout">Sign out</button>
+    <button data-act="reload">Reload latest data</button>
+    <button data-act="signout">Disconnect this device</button>
   </menu>
   <div class="row" style="margin-top:8px">
     <input class="grow" type="search" id="q" placeholder="Search name or company" autocomplete="off">
@@ -136,64 +136,72 @@ const LocalStore = {
   async readLock(){ return null }, async writeLock(){}, async dropLock(){}
 };
 
-const OneDriveStore = {
-  name: "OneDrive",
-  BASE: "https://graph.microsoft.com/v1.0/me/drive/special/approot:",
-  scopes: ["Files.ReadWrite.AppFolder"],
-  msal: null, lastToken: null,
+/* GitHub private repo as the database. Every save is a commit; GitHub rejects a save made from a stale copy (409),
+   which is the hard guarantee against two devices overwriting each other. Commit history doubles as free backups. */
+const GitHubStore = {
+  name: "GitHub (private repo)", lockTtl: 10 * 60000, heartbeat: 4 * 60000,
+  repo: (CFG.GITHUB_REPO || "").trim(), lockSha: null,
+  get token(){ try { return localStorage.getItem("crm.ghtoken") || ""; } catch(e){ return ""; } },
+  api(path, opts = {}){
+    return fetch("https://api.github.com/repos/" + this.repo + path, {...opts, cache: "no-store",
+      headers: {Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", Authorization: "Bearer " + this.token, ...(opts.headers||{})}});
+  },
   async init(){
-    if (window.__TEST_TOKEN) return;
-    await new Promise((res, rej) => { const s = document.createElement("script");
-      s.src = "https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"; s.onload = res; s.onerror = () => rej(new Error("Could not load sign-in library")); document.head.appendChild(s); });
-    this.msal = new msal.PublicClientApplication({
-      auth: {clientId: CFG.CLIENT_ID, authority: "https://login.microsoftonline.com/consumers", redirectUri: location.origin + location.pathname},
-      cache: {cacheLocation: "localStorage"}});
-    await this.msal.initialize?.();
-    const r = await this.msal.handleRedirectPromise();
-    if (r && r.account) this.msal.setActiveAccount(r.account);
-    if (!this.msal.getAllAccounts().length) { await this.msal.loginRedirect({scopes: this.scopes}); await new Promise(() => {}); }
-    this.msal.setActiveAccount(this.msal.getAllAccounts()[0]);
+    while (true) {
+      if (this.token) { const r = await this.api("").catch(() => null);
+        if (r && r.ok) return;
+        var problem = !r ? "Could not reach GitHub (are you online?)" : r.status === 401 ? "GitHub rejected that key — it may be mistyped or expired." : r.status === 404 ? "That key can't see the repository " + this.repo + ". Check the key's repository access." : "GitHub error " + r.status;
+        if (!r || r.status >= 500) throw new Error(problem);
+        try { localStorage.removeItem("crm.ghtoken"); } catch(e){} }
+      await this.askToken(problem);
+    }
   },
-  async token(){
-    if (window.__TEST_TOKEN) return window.__TEST_TOKEN;
-    try { const r = await this.msal.acquireTokenSilent({scopes: this.scopes, account: this.msal.getActiveAccount()}); this.lastToken = r.accessToken; return r.accessToken; }
-    catch (e) { await this.msal.acquireTokenRedirect({scopes: this.scopes}); await new Promise(() => {}); }
+  askToken(problem){
+    return new Promise(res => { const dlg = $("#dlg");
+      dlg.innerHTML = `<form method="dialog" class="form" id="tk"><div class="full"><b>Connect to your private data repository</b><p style="margin:6px 0;color:var(--mute)">Paste the access key you created on GitHub (it starts with <code>github_pat_</code>). It is stored only on this device.</p>
+        ${problem ? `<div class="hint">${esc(problem)}</div>` : ""}<input type="password" id="tkIn" placeholder="github_pat_…" autocomplete="off" style="margin-top:8px"></div>
+        <div class="full acts"><span class="sp"></span><button class="btn primary" type="submit">Connect</button></div></form>`;
+      dlg.addEventListener("cancel", e => e.preventDefault(), {once: true}); dlg.showModal();
+      $("#tk").onsubmit = e => { e.preventDefault(); const v = $("#tkIn").value.trim(); if (!v) return; try { localStorage.setItem("crm.ghtoken", v); } catch(e){} dlg.close(); res(); }; });
   },
-  async g(path, opts = {}){
-    const t = await this.token();
-    return fetch(this.BASE + path, {...opts, headers: {Authorization: "Bearer " + t, ...(opts.headers||{})}});
+  b64dec(b64){ const bin = atob(b64.replace(/\n/g, "")); return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))); },
+  b64enc(str){ const bytes = new TextEncoder().encode(str); let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(bin); },
+  async getFile(name){
+    const r = await this.api("/contents/" + name); if (r.status === 404) return null;
+    if (!r.ok) throw new Error("GitHub error " + r.status + " reading " + name);
+    const j = await r.json(); let text;
+    if (j.content) text = this.b64dec(j.content);
+    else { const b = await this.api("/git/blobs/" + j.sha); if (!b.ok) throw new Error("GitHub error " + b.status); text = this.b64dec((await b.json()).content); }   // files over 1 MB
+    return {text, sha: j.sha};
   },
-  async load(){
-    const meta = await this.g("/crm.json");                     // metadata first: its eTag can only be older than the content
-    if (meta.status === 404) return {data: null, etag: null};
-    if (!meta.ok) throw new Error("OneDrive error " + meta.status);
-    const etag = (await meta.json()).eTag;
-    const body = await this.g("/crm.json:/content");
-    if (!body.ok) throw new Error("OneDrive error " + body.status);
-    return {data: await body.json(), etag};
+  async load(){ const f = await this.getFile("crm.json"); return f ? {data: JSON.parse(f.text), etag: f.sha} : {data: null, etag: null}; },
+  async put(name, obj, sha, message){
+    const r = await this.api("/contents/" + name, {method: "PUT", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({message, content: this.b64enc(JSON.stringify(obj, null, 1)), ...(sha ? {sha} : {})})});
+    if (r.status === 409 || r.status === 422) throw new Conflict();
+    if (!r.ok) throw new Error("GitHub save failed (" + r.status + ")");
+    return (await r.json()).content.sha;
   },
   async save(data, etag){
     data.rev = (data.rev||0) + 1;
-    const q = etag ? "" : "?@microsoft.graph.conflictBehavior=fail";
-    const r = await this.g("/crm.json:/content" + q, {method: "PUT", headers: {"Content-Type": "application/json", ...(etag ? {"If-Match": etag} : {})}, body: JSON.stringify(data)});
-    if (r.status === 412 || r.status === 409) { data.rev--; throw new Conflict(); }
-    if (!r.ok) { data.rev--; throw new Error("OneDrive save failed " + r.status); }
-    return {etag: (await r.json()).eTag};
+    try { return {etag: await this.put("crm.json", data, etag, "Update contacts (rev " + data.rev + ")")}; }
+    catch (e) { data.rev--; throw e; }
   },
-  async readLock(){
-    const r = await this.g("/lock.json:/content"); if (r.status === 404) return null;
-    if (!r.ok) throw new Error("lock read " + r.status); return r.json();
-  },
-  async writeLock(lock){ const r = await this.g("/lock.json:/content", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(lock)}); if (!r.ok) throw new Error("lock write " + r.status); },
-  async dropLock(){ if (window.__TEST_TOKEN || !this.lastToken) return;
-    try { fetch(this.BASE + "/lock.json", {method: "DELETE", keepalive: true, headers: {Authorization: "Bearer " + this.lastToken}}); } catch(e){} }
+  async readLock(){ const f = await this.getFile("lock.json"); this.lockSha = f ? f.sha : null; return f ? JSON.parse(f.text) : null; },
+  async writeLock(lock){ if (this.lockSha === null) await this.readLock().catch(() => {});
+    try { this.lockSha = await this.put("lock.json", lock, this.lockSha, "lock"); }
+    catch (e) { if (e instanceof Conflict) { await this.readLock(); this.lockSha = await this.put("lock.json", lock, this.lockSha, "lock"); } else throw e; } },
+  async dropLock(){ if (!this.lockSha) return;
+    try { fetch("https://api.github.com/repos/" + this.repo + "/contents/lock.json", {method: "DELETE", keepalive: true,
+      headers: {Authorization: "Bearer " + this.token, Accept: "application/vnd.github+json", "Content-Type": "application/json"}, body: JSON.stringify({message: "unlock", sha: this.lockSha})}); } catch(e){} },
+  signOut(){ try { localStorage.removeItem("crm.ghtoken"); } catch(e){} location.reload(); }
 };
 
 /* ============================== state ============================== */
-const store = CFG.CLIENT_ID ? OneDriveStore : LocalStore;
+const store = CFG.GITHUB_REPO ? GitHubStore : LocalStore;
 const S = {data: null, etag: null, readOnly: false, view: "list", month: new Date(), selDay: null,
            prios: new Set(), due: false, archived: false, q: "", saving: 0, session: newId()};
-const LOCK_TTL = 150000, HEARTBEAT = 45000;
+const LOCK_TTL = store.lockTtl || 150000, HEARTBEAT = store.heartbeat || 45000;
 const deviceLabel = /Android|iPhone|Mobile/i.test(navigator.userAgent) ? "your phone" : "your computer";
 
 function setStatus(text, cls){ const el = $("#status"); el.textContent = text; el.className = "pill " + (cls||""); }
@@ -210,7 +218,8 @@ async function acquireLock(force){
   let lock = null; try { lock = await store.readLock(); } catch(e){}
   const fresh = lock && lock.session !== S.session && Date.now() - lock.ts < LOCK_TTL;
   if (fresh && !force) { S.readOnly = true; S.lockInfo = lock; return false; }
-  await store.writeLock({session: S.session, device: deviceLabel, ts: Date.now()}); S.lockInfo = null; return true;
+  if (!(lock && lock.session === S.session && Date.now() - lock.ts < 60000)) await store.writeLock({session: S.session, device: deviceLabel, ts: Date.now()});
+  S.lockInfo = null; return true;
 }
 async function heartbeat(){
   if (document.hidden || S.readOnly) return;
@@ -474,7 +483,7 @@ $("#menu").onclick = async e => { const a = e.target.dataset.act; if (!a) return
   if (a === "csv") exportCsv();
   if (a === "import") $("#file").click();
   if (a === "reload") { await loadAll(); toast("Reloaded"); }
-  if (a === "signout") { if (store.msal) { store.msal.logoutRedirect(); } else toast("Not signed in (local mode)"); } };
+  if (a === "signout") { if (store.signOut) { if (confirm("Remove the saved access key from this device?")) store.signOut(); } else toast("Not connected (local test mode)"); } };
 $("#file").onchange = e => { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ""; };
 document.addEventListener("visibilitychange", () => { if (!document.hidden && S.data && !S.saving) loadAll(); });
 addEventListener("pagehide", () => { if (!S.readOnly) store.dropLock(); });

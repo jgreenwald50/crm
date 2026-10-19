@@ -1,3 +1,3 @@
-// Paste your Azure "Application (client) ID" between the quotes to store data in OneDrive.
-// Leave it empty to run in local test mode (data stays in this browser only).
-window.CRM_CONFIG = { CLIENT_ID: "" };
+// The private GitHub repository that holds your contacts file (username/repository).
+// Empty = local test mode (data stays in this browser only).
+window.CRM_CONFIG = { GITHUB_REPO: "jgreenwald50/crm-data" };
