@@ -73,8 +73,15 @@ dialog::backdrop{background:#0008}
 .addbtn:disabled{opacity:.4;cursor:not-allowed}
 .srow select{width:auto;flex:none;max-width:190px}
 @media(max-width:600px){.srow select{max-width:118px}}
+.pop-only{display:none}
+body.pop .grip{cursor:default;font-size:0;border-radius:0}
+body.pop #popOut{display:none}
+body.pop dialog{width:100vw;height:100dvh;max-height:100dvh;border-radius:0;position:fixed;inset:0;margin:0}
+body.pop dialog::backdrop{background:none}
+body.pop header,body.pop #view,body.pop #fab{display:none}
+#popOut{margin-left:auto;font-size:11px;padding:3px 9px}
 .grip{cursor:move;font-size:11px;letter-spacing:.4px;color:var(--ink);padding:0 14px;height:46px;display:flex;align-items:center;user-select:none;touch-action:none;margin:-16px -16px 4px;border-radius:14px 14px 0 0;border-bottom:2px solid var(--gold);background:linear-gradient(90deg,var(--hero-a) 0%,var(--hero-a) 30%,var(--hero-b) 62%),url(banner.jpg) right center/cover var(--hero-a)}
-@media(max-width:600px){.grip{cursor:default;border-radius:0;font-size:0;height:36px}}
+@media(max-width:600px){#popOut{display:none}.grip{cursor:default;border-radius:0;font-size:0;height:36px}}
 .nav{display:flex;justify-content:space-between;align-items:center;gap:8px;position:sticky;top:0;background:var(--card);padding:2px 0 6px;z-index:2}
 .navpos{color:var(--mute);font-size:13px}
 @media(max-width:600px){.srow input[type=search]{width:auto;flex:1 1 0;min-width:0}}
@@ -227,6 +234,7 @@ function noAutofill(root){ root.querySelectorAll("input,textarea,select").forEac
   el.setAttribute("autocomplete", "off"); el.setAttribute("name", "f" + Math.random().toString(36).slice(2, 8)); el.setAttribute("data-1p-ignore", ""); el.setAttribute("data-lpignore", "true"); el.setAttribute("data-bwignore", "true"); el.setAttribute("data-form-type", "other"); }); }
 // A reload (F5) keeps the same id, so this tab reclaims its own lock; another tab or device gets a different id.
 function sessionId(){ try { let v = sessionStorage.getItem("crm.sid"); if (!v) { v = newId(); sessionStorage.setItem("crm.sid", v); } return v; } catch(e){ return newId(); } }
+const POP = /[?&]pop=1/.test(location.search);
 const S = {sort: loadSort(), data: null, etag: null, readOnly: false, view: "list", month: new Date(), selDay: null,
            prios: new Set(), due: false, archived: false, q: "", saving: 0, session: sessionId()};
 const LOCK_TTL = store.lockTtl || 150000, HEARTBEAT = store.heartbeat || 45000;
@@ -243,6 +251,7 @@ function toast(msg, actionLabel, action){
 /* ---- single-writer lock (friendly layer; the eTag check is the hard guarantee) ---- */
 async function acquireLock(force){
   S.readOnly = false;
+  if (POP) { let l = null; try { l = await store.readLock(); } catch(e){} if (l && l.session !== S.session && Date.now() - l.ts < LOCK_TTL) { S.readOnly = true; S.lockInfo = l; } return !S.readOnly; }
   let lock = null; try { lock = await store.readLock(); } catch(e){}
   const fresh = lock && lock.session !== S.session && Date.now() - lock.ts < LOCK_TTL;
   if (fresh && !force) { S.readOnly = true; S.lockInfo = lock; return false; }
@@ -257,6 +266,7 @@ async function heartbeat(){
   } catch(e){}
 }
 
+let bc = null; try { bc = new BroadcastChannel("crm-sync"); bc.onmessage = async () => { if (!S.data || S.saving) return; try { const r = await store.load(); S.data = r.data || S.data; S.etag = r.etag; render(); } catch(e){} }; } catch(e){}
 async function loadAll(forceLock){
   setStatus("Loading…");
   const got = await acquireLock(forceLock);
@@ -270,7 +280,7 @@ async function mutate(fn){
   if (S.readOnly) { toast("Read-only: the app is open on another device"); return false; }
   for (let attempt = 0; attempt < 3; attempt++) {
     fn(S.data); S.saving++; setStatus("Saving…"); render();
-    try { const r = await store.save(S.data, S.etag); S.etag = r.etag; S.saving--; setStatus("Saved", "ok"); render(); return true; }
+    try { const r = await store.save(S.data, S.etag); S.etag = r.etag; S.saving--; setStatus("Saved", "ok"); render(); try { bc && bc.postMessage(1); } catch(e){} return true; }
     catch (e) {
       S.saving--;
       if (e instanceof Conflict) { const r = await store.load(); S.data = r.data; S.etag = r.etag; toast("Another device changed the data — merged and retrying"); continue; }
@@ -374,8 +384,8 @@ function renderCal(){
 // The contacts, in the order they are currently displayed, for the Prev/Next buttons in the edit form.
 function navIds(el){
   if (S.view === "list") return sortList(visible()).map(c => c.id);
-  const cell = el.closest("[data-day]"), k = cell ? cell.dataset.day : S.selDay;      // calendar: the people listed for that day
-  return sortList(visible({ignoreDue: true}).filter(c => c.nextDate === k), "date").map(c => c.id);
+  const ym = S.month.getFullYear() + "-" + String(S.month.getMonth() + 1).padStart(2, "0");   // calendar: everyone scheduled in the month shown, in date order
+  return sortList(visible({ignoreDue: true}).filter(c => c.nextDate && c.nextDate.startsWith(ym)), "date").map(c => c.id);
 }
 function fmtPhone(v){ let d = v.replace(/\D/g, ""); if (d.length === 11 && d[0] === "1") d = d.slice(1); return d.length === 10 ? `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}` : v; }
 function openForm(id, ids){
@@ -383,10 +393,10 @@ function openForm(id, ids){
   if (!c) return;
   const ro = S.readOnly ? "disabled" : "";
   const prOpts = [...Array(11).keys(), 99].map(p => `<option value="${p}" ${p===c.priority?"selected":""}>${p===99?"99 (archived)":p}</option>`).join("");
-  const idx = !isNew && ids ? ids.indexOf(id) : -1, showNav = idx >= 0 && ids.length > 1;
+  const idx = !isNew && ids ? ids.indexOf(id) : -1, showNav = idx >= 0;
   const dlg = $("#dlg");
   dlg.innerHTML = `<form method="dialog" class="form" id="f" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true"><div id="sink" tabindex="-1" style="grid-column:1/-1;height:0;margin-bottom:-10px;outline:none"></div>
-    <div class="full grip" id="grip" title="Drag to move this window">⠿ drag to move</div>
+    <div class="full grip" id="grip" title="Drag to move this window">⠿ drag to move${!isNew && !POP ? `<button type="button" class="btn" id="popOut" title="Open this contact in its own window you can put on another monitor">Pop out ⧉</button>` : ""}</div>
     ${showNav ? `<div class="full nav"><button type="button" class="btn" id="navPrev" ${idx === 0 ? "disabled" : ""}>‹ Prev</button><span class="navpos">${idx + 1} of ${ids.length}</span><button type="button" class="btn" id="navNext" ${idx === ids.length - 1 ? "disabled" : ""}>Next ›</button></div>` : ""}
     <div><label>Name</label><input type="text" id="fName" value="${esc(c.name)}" ${ro} required></div>
     <div><label>Company</label><input type="text" id="fCo" value="${esc(c.company)}" ${ro}></div>
@@ -438,6 +448,12 @@ function openForm(id, ids){
       if (!S.readOnly && !(await saveForm())) return;
       dlg.close(); openForm(ids[idx + step], ids); };
     g("#navPrev").onclick = () => go(-1); g("#navNext").onclick = () => go(1); }
+  const po = g("#popOut"); if (po) po.onclick = async () => {
+    if (!S.readOnly && !(await saveForm())) return;
+    try { localStorage.setItem("crm.pop", JSON.stringify({id, ids: ids || [id], t: Date.now()})); } catch(e){}
+    const w = window.open("index.html?pop=1", "crmentry", "popup=yes,width=700,height=840");
+    if (!w) { toast("Your browser blocked the pop-up — allow pop-ups for this site"); return; }
+    dlg.close(); };
 }
 
 /* ============================== actions ============================== */
@@ -513,13 +529,13 @@ function rowsToContacts(rows){
   return out;
 }
 function enableDrag(dlg){
-  const grip = dlg.querySelector("#grip"); if (!grip || innerWidth <= 600) { dlg.style.cssText = ""; return; }
+  const grip = dlg.querySelector("#grip"); if (!grip || POP || innerWidth <= 600) { dlg.style.cssText = ""; return; }
   const clamp = (x, y) => [Math.min(Math.max(0, x), Math.max(0, innerWidth - 120)), Math.min(Math.max(0, y), Math.max(0, innerHeight - 60))];
   const place = (x, y) => { [x, y] = clamp(x, y); dlg.style.position = "fixed"; dlg.style.margin = "0"; dlg.style.left = x + "px"; dlg.style.top = y + "px"; return [x, y]; };
   let saved = null; try { saved = JSON.parse(localStorage.getItem("crm.dlgpos")); } catch(e){}
   if (saved && typeof saved.x === "number") place(saved.x, saved.y); else dlg.style.cssText = "";
   let d = null;
-  grip.onpointerdown = e => { const r = dlg.getBoundingClientRect(); d = {dx: e.clientX - r.left, dy: e.clientY - r.top}; place(r.left, r.top); grip.setPointerCapture(e.pointerId); e.preventDefault(); };
+  grip.onpointerdown = e => { if (e.target.closest("button")) return; const r = dlg.getBoundingClientRect(); d = {dx: e.clientX - r.left, dy: e.clientY - r.top}; place(r.left, r.top); grip.setPointerCapture(e.pointerId); e.preventDefault(); };
   grip.onpointermove = e => { if (d) place(e.clientX - d.dx, e.clientY - d.dy); };
   grip.onpointerup = e => { if (!d) return; d = null; const r = dlg.getBoundingClientRect(); try { localStorage.setItem("crm.dlgpos", JSON.stringify({x: Math.round(r.left), y: Math.round(r.top)})); } catch(x){} };
   grip.ondblclick = () => { dlg.style.cssText = ""; try { localStorage.removeItem("crm.dlgpos"); } catch(x){} };
@@ -564,8 +580,7 @@ $("#menu").onclick = async e => { const a = e.target.dataset.act; if (!a) return
   if (a === "signout") { if (store.signOut) { if (confirm("Remove the saved access key from this device?")) store.signOut(); } else toast("Not connected (local test mode)"); } };
 $("#file").onchange = e => { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ""; };
 document.addEventListener("visibilitychange", () => { if (!document.hidden && S.data && !S.saving) loadAll(); });
-addEventListener("pagehide", () => { if (!S.readOnly) store.dropLock(); });
-setInterval(heartbeat, HEARTBEAT);
+if (!POP) { addEventListener("pagehide", () => { if (!S.readOnly) store.dropLock(); }); setInterval(heartbeat, HEARTBEAT); }
 noAutofill(document);
 
 (async function start(){
@@ -573,7 +588,15 @@ noAutofill(document);
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(() => {});
     await store.init();
     if (store === LocalStore) $("h1").textContent = "Contacts (local test mode)";
+    if (POP) { document.body.classList.add("pop"); document.title = "Contact"; }
     await loadAll();
+    if (POP) {
+      let p = null; try { p = JSON.parse(localStorage.getItem("crm.pop")); } catch(e){}
+      if (!p || !p.id) { window.close(); return; }
+      $("#dlg").addEventListener("close", () => setTimeout(() => { if (!$("#dlg").open) window.close(); }, 80));
+      $("#dlg").addEventListener("cancel", () => {});
+      openForm(p.id, p.ids);
+    }
   } catch (e) { setStatus("Error", "bad"); $("#view").innerHTML = `<div class="empty">Could not start: ${esc(e.message)}</div>`; }
 })();
 </script>
