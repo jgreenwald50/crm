@@ -388,15 +388,15 @@ function navIds(el){
   return sortList(visible({ignoreDue: true}).filter(c => c.nextDate && c.nextDate.startsWith(ym)), "date").map(c => c.id);
 }
 function fmtPhone(v){ let d = v.replace(/\D/g, ""); if (d.length === 11 && d[0] === "1") d = d.slice(1); return d.length === 10 ? `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}` : v; }
-function openForm(id, ids){
-  const isNew = !id, c = isNew ? {id: newId(), name:"", company:"", email:"", phone:"", priority:0, nextDate:"", nextAction:"", lastInteraction:"", history:"", updated:""} : S.data.contacts.find(x => x.id === id);
+function openForm(id, ids, draft){
+  const isNew = !id, c = isNew ? {id: newId(), name:"", company:"", email:"", phone:"", priority:0, nextDate:"", nextAction:"", lastInteraction:"", history:"", updated:"", ...(draft || {})} : S.data.contacts.find(x => x.id === id);
   if (!c) return;
   const ro = S.readOnly ? "disabled" : "";
   const prOpts = [...Array(11).keys(), 99].map(p => `<option value="${p}" ${p===c.priority?"selected":""}>${p===99?"99 (archived)":p}</option>`).join("");
   const idx = !isNew && ids ? ids.indexOf(id) : -1, showNav = idx >= 0;
   const dlg = $("#dlg");
   dlg.innerHTML = `<form method="dialog" class="form" id="f" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true"><div id="sink" tabindex="-1" style="grid-column:1/-1;height:0;margin-bottom:-10px;outline:none"></div>
-    <div class="full grip" id="grip" title="Drag to move this window">⠿ drag to move${!isNew && !POP ? `<button type="button" class="btn" id="popOut" title="Open this contact in its own window you can put on another monitor">Pop out ⧉</button>` : ""}</div>
+    <div class="full grip" id="grip" title="Drag to move this window">⠿ drag to move${!POP ? `<button type="button" class="btn" id="popOut" title="Open this contact in its own window you can put on another monitor">Pop out ⧉</button>` : ""}</div>
     ${showNav ? `<div class="full nav"><button type="button" class="btn" id="navPrev" ${idx === 0 ? "disabled" : ""}>‹ Prev</button><span class="navpos">${idx + 1} of ${ids.length}</span><button type="button" class="btn" id="navNext" ${idx === ids.length - 1 ? "disabled" : ""}>Next ›</button></div>` : ""}
     <div><label>Name</label><input type="text" id="fName" value="${esc(c.name)}" ${ro} required></div>
     <div><label>Company</label><input type="text" id="fCo" value="${esc(c.company)}" ${ro}></div>
@@ -449,8 +449,8 @@ function openForm(id, ids){
       dlg.close(); openForm(ids[idx + step], ids); };
     g("#navPrev").onclick = () => go(-1); g("#navNext").onclick = () => go(1); }
   const po = g("#popOut"); if (po) po.onclick = async () => {
-    if (!S.readOnly && !(await saveForm())) return;
-    try { localStorage.setItem("crm.pop", JSON.stringify({id, ids: ids || [id], t: Date.now()})); } catch(e){}
+    if (!isNew && !S.readOnly && !(await saveForm())) return;
+    try { localStorage.setItem("crm.pop", JSON.stringify({id: isNew ? null : id, isNew, draft: isNew ? collect() : null, ids: ids || [id], t: Date.now()})); } catch(e){}
     const w = window.open("index.html?pop=1", "crmentry", "popup=yes,width=700,height=840");
     if (!w) { toast("Your browser blocked the pop-up — allow pop-ups for this site"); return; }
     dlg.close(); };
@@ -592,10 +592,10 @@ noAutofill(document);
     await loadAll();
     if (POP) {
       let p = null; try { p = JSON.parse(localStorage.getItem("crm.pop")); } catch(e){}
-      if (!p || !p.id) { window.close(); return; }
+      if (!p || (!p.id && !p.isNew)) { window.close(); return; }
       $("#dlg").addEventListener("close", () => setTimeout(() => { if (!$("#dlg").open) window.close(); }, 80));
       $("#dlg").addEventListener("cancel", () => {});
-      openForm(p.id, p.ids);
+      openForm(p.id, p.ids, p.draft);
     }
   } catch (e) { setStatus("Error", "bad"); $("#view").innerHTML = `<div class="empty">Could not start: ${esc(e.message)}</div>`; }
 })();
