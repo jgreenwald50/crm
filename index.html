@@ -73,7 +73,9 @@ dialog::backdrop{background:#0008}
 .addbtn:disabled{opacity:.4;cursor:not-allowed}
 .srow select{width:auto;flex:none;max-width:190px}
 @media(max-width:600px){.srow select{max-width:118px}}
-.pop-only{display:none}
+#paneIdle{display:none}
+body.pop #paneIdle{display:block;position:fixed;inset:0;background:var(--bg)}
+.idlemsg{padding:40px 24px;text-align:center;color:var(--mute);line-height:1.8}
 body.pop .grip{cursor:default;font-size:0;border-radius:0}
 body.pop #popOut{display:none}
 body.pop dialog{width:100vw;height:100dvh;max-height:100dvh;border-radius:0;position:fixed;inset:0;margin:0}
@@ -104,6 +106,7 @@ menu button:hover{background:var(--chip)}
     <button data-act="export">Export backup (JSON)</button>
     <button data-act="csv">Export CSV</button>
     <button data-act="import">Import Excel / CSV…</button>
+    <button data-act="sep" id="sepBtn">Entry window: same window</button>
     <button data-act="reload">Reload latest data</button>
     <button data-act="signout">Disconnect this device</button>
   </menu>
@@ -118,7 +121,9 @@ menu button:hover{background:var(--chip)}
   <div id="banner"></div>
   <div id="view"></div>
 </main>
+<div id="paneIdle"><div class="grip" style="margin:0;cursor:default">Entry window</div><div class="idlemsg">Entry window is ready.<br>Click a contact (or +) in the main window and it opens here.<br>You can leave this window on your other monitor.</div></div>
 <dialog id="dlg"></dialog>
+<dialog id="ask" style="width:min(380px,92vw)"><div style="padding:18px"><b id="askT">Unsaved changes</b><p id="askP" style="margin:8px 0 14px;color:var(--mute)"></p><div class="row" style="justify-content:flex-end"><button class="btn" id="askKeep">Keep editing</button><button class="btn danger" id="askDiscard">Discard</button><button class="btn primary" id="askSave">Save</button></div></div></dialog>
 <div id="toast"><span id="toastMsg"></span><button id="toastBtn" style="display:none"></button></div>
 <input type="file" id="file" accept=".xlsx,.xlsm,.xls,.csv,.json" hidden>
 
@@ -266,7 +271,33 @@ async function heartbeat(){
   } catch(e){}
 }
 
-let bc = null; try { bc = new BroadcastChannel("crm-sync"); bc.onmessage = async () => { if (!S.data || S.saving) return; try { const r = await store.load(); S.data = r.data || S.data; S.etag = r.etag; render(); } catch(e){} }; } catch(e){}
+let bc = null; try { bc = new BroadcastChannel("crm-sync"); bc.onmessage = e => { if (!S.data || S.saving || !e.data || !e.data.data) return; S.data = e.data.data; S.etag = e.data.etag; render(); }; } catch(e){}
+/* ---- optional standing entry window (second monitor) ---- */
+const sepOn = () => { try { return localStorage.getItem("crm.sep") === "1" && innerWidth > 600 && !POP; } catch(e){ return false; } };
+function sepLabel(){ const b = $("#sepBtn"); if (b) b.textContent = "Entry window: " + (localStorage.getItem("crm.sep") === "1" ? "separate (on)" : "same window"); }
+const pane = (() => { try { return new BroadcastChannel("crm-pane"); } catch(e){ return null; } })();
+function paneAlive(){ return new Promise(res => { if (!pane) return res(false); const h = e => { if (e.data === "pong") { pane.removeEventListener("message", h); res(true); } }; pane.addEventListener("message", h); pane.postMessage("ping"); setTimeout(() => { pane.removeEventListener("message", h); res(false); }, 700); }); }
+async function openEntry(id, ids){
+  if (!sepOn()) return openForm(id, ids);
+  try { localStorage.setItem("crm.pop", JSON.stringify({id, isNew: !id, draft: null, ids: ids || [id], t: Date.now()})); } catch(e){}
+  if (await paneAlive()) { pane.postMessage("open"); return; }
+  const w = window.open("index.html?pop=1", "crmentry", "popup=yes,width=700,height=840");
+  if (!w) { toast("Your browser blocked the pop-up — allow pop-ups for this site, or switch the entry window back to the same window in the ⋯ menu"); openForm(id, ids); }
+}
+if (POP && pane) pane.onmessage = async e => {
+  if (e.data === "ping") pane.postMessage("pong");
+  if (e.data === "open") { const dlg = $("#dlg");
+    window.focus(); if (dlg.open && S.cur && !(await S.cur.resolveEdits())) return;
+    if (dlg.open) dlg.close();
+    let p = null; try { p = JSON.parse(localStorage.getItem("crm.pop")); } catch(x){}
+    if (p) openForm(p.id, p.ids, p.draft); window.focus(); }
+};
+function askChoice(name){
+  return new Promise(res => { const d = $("#ask"); $("#askP").textContent = `You have unsaved changes${name ? " to " + name : ""}. Save them or discard them?`;
+    const done = v => { d.close(); res(v); };
+    $("#askSave").onclick = () => done("save"); $("#askDiscard").onclick = () => done("discard"); $("#askKeep").onclick = () => done("keep");
+    d.oncancel = e => { e.preventDefault(); done("keep"); }; d.showModal(); $("#askSave").focus(); });
+}
 async function loadAll(forceLock){
   setStatus("Loading…");
   const got = await acquireLock(forceLock);
@@ -280,7 +311,7 @@ async function mutate(fn){
   if (S.readOnly) { toast("Read-only: the app is open on another device"); return false; }
   for (let attempt = 0; attempt < 3; attempt++) {
     fn(S.data); S.saving++; setStatus("Saving…"); render();
-    try { const r = await store.save(S.data, S.etag); S.etag = r.etag; S.saving--; setStatus("Saved", "ok"); render(); try { bc && bc.postMessage(1); } catch(e){} return true; }
+    try { const r = await store.save(S.data, S.etag); S.etag = r.etag; S.saving--; setStatus("Saved", "ok"); render(); try { bc && bc.postMessage({data: S.data, etag: S.etag}); } catch(e){} return true; }
     catch (e) {
       S.saving--;
       if (e instanceof Conflict) { const r = await store.load(); S.data = r.data; S.etag = r.etag; toast("Another device changed the data — merged and retrying"); continue; }
@@ -445,11 +476,18 @@ function openForm(id, ids, draft){
     return await mutate(d => { let x = d.contacts.find(z => z.id === c.id); if (!x) { x = {id: c.id}; d.contacts.push(x); } Object.assign(x, n, {updated: nowIso()}); }); };
   g("#f").onsubmit = async e => { e.preventDefault(); if (S.readOnly) return; if (await saveForm()) dlg.close(); };
   if (showNav) { const go = async step => {   // Prev/Next: save any edits first, then open the neighbour in the displayed order
-      if (!S.readOnly && !(await saveForm())) return;
+      if (!(await resolveEdits())) return;
       dlg.close(); openForm(ids[idx + step], ids); };
     g("#navPrev").onclick = () => go(-1); g("#navNext").onclick = () => go(1); }
+  const isDirty = () => { const n = collect(); return isNew ? !!(n.name || n.company || n.email || n.phone || n.nextAction || n.lastInteraction || n.history || n.nextDate) : changedFrom(n); };
+  const resolveEdits = async () => {        // true = OK to leave this form, false = stay
+    if (S.readOnly || !isDirty()) return true;
+    const a = await askChoice(c.name || ""); if (a === "keep") return false;
+    if (a === "save") return await saveForm();
+    return true; };
+  S.cur = {isNew, saveForm, collect, resolveEdits};
   const po = g("#popOut"); if (po) po.onclick = async () => {
-    if (!isNew && !S.readOnly && !(await saveForm())) return;
+    if (!isNew && !(await resolveEdits())) return;
     try { localStorage.setItem("crm.pop", JSON.stringify({id: isNew ? null : id, isNew, draft: isNew ? collect() : null, ids: ids || [id], t: Date.now()})); } catch(e){}
     const w = window.open("index.html?pop=1", "crmentry", "popup=yes,width=700,height=840");
     if (!w) { toast("Your browser blocked the pop-up — allow pop-ups for this site"); return; }
@@ -561,14 +599,14 @@ $("#chips").onclick = e => { const b = e.target.closest(".chip"); if (!b) return
   if (b.hasAttribute("data-due")) S.due = !S.due; else if (b.hasAttribute("data-arch")) S.archived = !S.archived;
   else { const p = Number(b.dataset.p); S.prios.has(p) ? S.prios.delete(p) : S.prios.add(p); } render(); };
 $("#view").onclick = e => {
-  const card = e.target.closest("[data-id]"); if (card) { e.stopPropagation(); openForm(card.dataset.id, navIds(card)); return; }
+  const card = e.target.closest("[data-id]"); if (card) { e.stopPropagation(); openEntry(card.dataset.id, navIds(card)); return; }
   const day = e.target.closest("[data-day]"); if (day) { S.selDay = day.dataset.day; renderCal(); }
 };
 $("#sortSel").innerHTML = SORTS.map(([v, l]) => `<option value="${v}">Sort: ${l}</option>`).join(""); $("#sortSel").value = S.sort;
 $("#sortSel").onchange = e => { S.sort = e.target.value; try { localStorage.setItem("crm.sort", S.sort); } catch(_) {} render(); };
 $("#tabList").onclick = () => { S.view = "list"; render(); };
 $("#tabCal").onclick = () => { S.view = "cal"; render(); };
-$("#fab").onclick = () => openForm(null);
+$("#fab").onclick = () => openEntry(null);
 $("#btnResched").onclick = reschedule;
 $("#btnMenu").onclick = e => { e.stopPropagation(); const m = $("#menu"); m.style.display = m.style.display === "block" ? "none" : "block"; };
 document.addEventListener("click", () => $("#menu").style.display = "none");
@@ -576,12 +614,14 @@ $("#menu").onclick = async e => { const a = e.target.dataset.act; if (!a) return
   if (a === "export") download(`crm_backup_${todayIso()}.json`, JSON.stringify(S.data, null, 1), "application/json");
   if (a === "csv") exportCsv();
   if (a === "import") $("#file").click();
+  if (a === "sep") { try { localStorage.setItem("crm.sep", localStorage.getItem("crm.sep") === "1" ? "0" : "1"); } catch(x){} sepLabel(); toast(localStorage.getItem("crm.sep") === "1" ? "Entries will open in their own window" : "Entries will open in this window"); }
   if (a === "reload") { await loadAll(); toast("Reloaded"); }
   if (a === "signout") { if (store.signOut) { if (confirm("Remove the saved access key from this device?")) store.signOut(); } else toast("Not connected (local test mode)"); } };
 $("#file").onchange = e => { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ""; };
 document.addEventListener("visibilitychange", () => { if (!document.hidden && S.data && !S.saving) loadAll(); });
 if (!POP) { addEventListener("pagehide", () => { if (!S.readOnly) store.dropLock(); }); setInterval(heartbeat, HEARTBEAT); }
 noAutofill(document);
+sepLabel();
 
 (async function start(){
   try {
@@ -592,10 +632,7 @@ noAutofill(document);
     await loadAll();
     if (POP) {
       let p = null; try { p = JSON.parse(localStorage.getItem("crm.pop")); } catch(e){}
-      if (!p || (!p.id && !p.isNew)) { window.close(); return; }
-      $("#dlg").addEventListener("close", () => setTimeout(() => { if (!$("#dlg").open) window.close(); }, 80));
-      $("#dlg").addEventListener("cancel", () => {});
-      openForm(p.id, p.ids, p.draft);
+      if (p && (p.id || p.isNew) && Date.now() - p.t < 15000) openForm(p.id, p.ids, p.draft);
     }
   } catch (e) { setStatus("Error", "bad"); $("#view").innerHTML = `<div class="empty">Could not start: ${esc(e.message)}</div>`; }
 })();
