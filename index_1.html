@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Contacts CRM</title>
+<meta name="theme-color" content="#1c2c4f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+:root{--bg:#f6f1e6;--card:#fffdf8;--ink:#1c2740;--mute:#657089;--line:#ddd3bf;--accent:#1f3a63;--accent-ink:#fff;--warn:#8a5a14;--warn-bg:#f3e8c8;--bad:#b91c1c;--ok:#15803d;--chip:#ebe3d0;--cal:#d5dfeb;--hero-a:#efe6d4;--hero-b:rgba(239,230,212,0);--gold:#b09a6c}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1626;--card:#172036;--ink:#e8e4d8;--mute:#9aa5ba;--line:#2a3550;--accent:#c4ad7c;--accent-ink:#101828;--warn:#fbbf24;--warn-bg:#3a2e0b;--bad:#f87171;--ok:#4ade80;--chip:#222d47;--cal:#26385c;--hero-a:#101828;--hero-b:rgba(16,24,40,.62);--gold:#c4ad7c}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+header{position:sticky;top:0;z-index:5;background:linear-gradient(90deg,var(--hero-a) 0%,var(--hero-a) 30%,var(--hero-b) 62%),url(banner.jpg) right center/cover var(--hero-a);border-bottom:2px solid var(--gold);padding:8px 16px;padding-top:max(8px,env(safe-area-inset-top))}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.grow{flex:1;min-width:140px}
+h1{font-size:19px;margin:0 8px 0 0;letter-spacing:.3px;color:var(--ink)}
+.btn{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:7px 12px}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.danger{color:var(--bad)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.tabs button{border:0;background:none;padding:7px 12px;border-bottom:2px solid transparent}
+.tabs button.on{border-color:var(--accent);font-weight:600}
+input[type=search],input[type=text],input[type=email],input[type=tel],input[type=date],select,textarea{width:100%;border:1px solid var(--line);background:var(--card);border-radius:8px;padding:8px 10px}
+textarea{resize:vertical}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.chip{border:1px solid var(--line);background:var(--chip);border-radius:999px;padding:3px 11px;font-size:13px}
+.chip.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.pill{font-size:12px;border-radius:999px;padding:2px 9px;background:var(--chip);color:var(--mute)}
+.pill.ok{color:var(--ok)}.pill.bad{color:var(--bad)}
+main{max-width:1000px;margin:0 auto;padding:12px 16px 90px}
+.banner{margin:10px 0;padding:10px 12px;border-radius:8px;background:var(--warn-bg);color:var(--warn);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.banner span{flex:1;min-width:200px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0;cursor:pointer}
+.card:hover{border-color:var(--accent)}
+.card .top{display:flex;gap:10px;align-items:baseline}
+.card .nm{font-weight:600}.card .co{color:var(--mute)}
+.card .when{margin-left:auto;white-space:nowrap;font-size:13px;color:var(--mute)}
+.card .when.over{color:var(--bad);font-weight:600}.card .when.today{color:var(--ok);font-weight:600}
+.card .note{color:var(--mute);font-size:13px;margin-top:3px;white-space:pre-line;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pr{display:inline-block;min-width:26px;text-align:center;border-radius:6px;padding:1px 6px;font-size:12px;font-weight:700;background:var(--chip)}
+.pr.p1{background:#b91c1c;color:#fff}.pr.p2{background:#d97706;color:#fff}.pr.p3{background:#ca8a04;color:#fff}.pr.p99{opacity:.55}
+.count{color:var(--mute);font-size:13px;margin:10px 2px 0}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:10px}
+.cal .dow{background:var(--chip);text-align:center;font-size:12px;padding:4px;color:var(--mute)}
+.cal .day{background:var(--card);min-height:84px;padding:3px;overflow:hidden;cursor:pointer}
+.cal .day.out{opacity:.45}.cal .day.sel{outline:2px solid var(--accent);outline-offset:-2px}
+.cal .day .n{font-size:12px;font-weight:700;color:var(--mute)}
+.cal .day.today .n{color:var(--accent-ink);background:var(--accent);border-radius:999px;padding:0 6px}
+.cal .ev{background:var(--cal);border-radius:4px;font-size:11px;padding:1px 4px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal .more{font-size:11px;color:var(--mute)}
+@media(max-width:600px){.cal .day{min-height:56px}.cal .ev{display:none}.cal .dots{display:flex;gap:2px;flex-wrap:wrap;margin-top:3px}.cal .dots i{width:6px;height:6px;border-radius:50%;background:var(--accent)}}
+@media(min-width:601px){.cal .dots{display:none}}
+dialog{border:0;border-radius:14px;padding:0;width:min(640px,100vw);max-height:100dvh;background:var(--card);color:var(--ink)}
+dialog::backdrop{background:#0008}
+@media(max-width:600px){dialog{width:100vw;height:100dvh;max-height:100dvh;border-radius:0}}
+.form{padding:16px;display:grid;gap:10px;grid-template-columns:1fr 1fr}
+.form .full{grid-column:1/-1}
+.form label{font-size:12px;color:var(--mute);display:block;margin-bottom:2px}
+.form .acts{display:flex;gap:8px;flex-wrap:wrap;position:sticky;bottom:0;background:var(--card);padding-top:8px}
+.form .acts .sp{flex:1}
+.hint{font-size:12px;color:var(--warn);margin-top:2px}
+.lnk{font-size:12px;margin-left:6px;color:var(--accent);text-decoration:none}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#1c2c4f;color:#fff;border-radius:10px;padding:10px 14px;display:none;gap:12px;align-items:center;z-index:20;max-width:92vw}
+#toast button{background:none;border:0;color:#d9c48f;font-weight:700}
+.empty{text-align:center;color:var(--mute);padding:40px 10px}
+.srow{display:flex;gap:8px;align-items:center;margin-top:8px}
+.srow input[type=search]{width:50%}
+.addbtn{width:40px;height:40px;flex:none;border-radius:10px;font-size:26px;line-height:1;border:0;background:var(--accent);color:var(--accent-ink);padding:0}
+.addbtn:disabled{opacity:.4;cursor:not-allowed}
+.srow select{width:auto;flex:none;max-width:190px}
+@media(max-width:600px){.srow select{max-width:118px}}
+.grip{cursor:move;font-size:11px;letter-spacing:.4px;color:var(--ink);padding:0 14px;height:46px;display:flex;align-items:center;user-select:none;touch-action:none;margin:-16px -16px 4px;border-radius:14px 14px 0 0;border-bottom:2px solid var(--gold);background:linear-gradient(90deg,var(--hero-a) 0%,var(--hero-a) 30%,var(--hero-b) 62%),url(banner.jpg) right center/cover var(--hero-a)}
+@media(max-width:600px){.grip{cursor:default;border-radius:0;font-size:0;height:36px}}
+.nav{display:flex;justify-content:space-between;align-items:center;gap:8px;position:sticky;top:0;background:var(--card);padding:2px 0 6px;z-index:2}
+.navpos{color:var(--mute);font-size:13px}
+@media(max-width:600px){.srow input[type=search]{width:auto;flex:1 1 0;min-width:0}}
+menu{margin:0;padding:6px;list-style:none;position:absolute;right:12px;top:48px;background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 20px #0003;display:none;z-index:10;min-width:200px}
+menu button{display:block;width:100%;text-align:left;border:0;background:none;padding:9px 12px;border-radius:6px}
+menu button:hover{background:var(--chip)}
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <h1>Contacts</h1>
+    <div class="tabs row" style="gap:0"><button id="tabList" class="on">List</button><button id="tabCal">Calendar</button></div>
+    <span id="status" class="pill">Loading…</span>
+    <span class="grow"></span>
+    <button class="btn" id="btnResched" title="Move all past-due contacts to today">Reschedule overdue</button>
+    <button class="btn" id="btnMenu" aria-label="More">⋯</button>
+  </div>
+  <menu id="menu">
+    <button data-act="export">Export backup (JSON)</button>
+    <button data-act="csv">Export CSV</button>
+    <button data-act="import">Import Excel / CSV…</button>
+    <button data-act="reload">Reload latest data</button>
+    <button data-act="signout">Disconnect this device</button>
+  </menu>
+  <div class="srow">
+    <button class="addbtn" id="fab" aria-label="Add contact" title="Add contact">+</button>
+    <input type="search" id="q" placeholder="Search name or company" autocomplete="off">
+    <select id="sortSel" title="Sort order" aria-label="Sort order"></select>
+  </div>
+  <div class="chips" id="chips"></div>
+</header>
+<main>
+  <div id="banner"></div>
+  <div id="view"></div>
+</main>
+<dialog id="dlg"></dialog>
+<div id="toast"><span id="toastMsg"></span><button id="toastBtn" style="display:none"></button></div>
+<input type="file" id="file" accept=".xlsx,.xlsm,.xls,.csv,.json" hidden>
+
+<script src="config.js"></script>
+<script>
+"use strict";
+/* ============================== helpers ============================== */
+const CFG = window.CRM_CONFIG || {};
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pad = n => String(n).padStart(2, "0");
+const isoOf = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const todayIso = () => isoOf(new Date());
+const parseIso = s => { const [y,m,d] = s.split("-").map(Number); return new Date(y, m-1, d); };
+const fmtDate = s => { if(!s) return ""; const d = parseIso(s); return `${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`; };
+const nowIso = () => { const d = new Date(); return `${isoOf(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
+const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), b => b.toString(16).padStart(2,"0")).join("");
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+class Conflict extends Error {}
+
+/* ============================== storage ============================== */
+// Both stores expose: load() -> {data, etag}; save(data, etag) -> {etag}
+const LocalStore = {
+  name: "this browser only",
+  async init(){},
+  async load(){ const raw = localStorage.getItem("crm.data"); const data = raw ? JSON.parse(raw) : null; return {data, etag: data ? String(data.rev||0) : null}; },
+  async save(data, etag){
+    const cur = localStorage.getItem("crm.data"); const curRev = cur ? String(JSON.parse(cur).rev||0) : null;
+    if (curRev !== etag) throw new Conflict();
+    data.rev = (data.rev||0) + 1; localStorage.setItem("crm.data", JSON.stringify(data)); return {etag: String(data.rev)};
+  },
+  async readLock(){ return null }, async writeLock(){}, async dropLock(){}
+};
+
+/* GitHub private repo as the database. Every save is a commit; GitHub rejects a save made from a stale copy (409),
+   which is the hard guarantee against two devices overwriting each other. Commit history doubles as free backups. */
+const GitHubStore = {
+  name: "GitHub (private repo)", lockTtl: 10 * 60000, heartbeat: 4 * 60000,
+  repo: (CFG.GITHUB_REPO || "").trim(), lockSha: null,
+  get token(){ try { return localStorage.getItem("crm.ghtoken") || ""; } catch(e){ return ""; } },
+  api(path, opts = {}){
+    return fetch("https://api.github.com/repos/" + this.repo + path, {...opts, cache: "no-store",
+      headers: {Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", Authorization: "Bearer " + this.token, ...(opts.headers||{})}});
+  },
+  async init(){
+    while (true) {
+      var problem = "";
+      if (this.token) {
+        const r = await this.api("").catch(() => null);
+        if (r && r.ok) return;
+        if (!r) throw new Error("Could not reach GitHub (are you online?)");
+        let msg = ""; try { msg = (await r.json()).message || ""; } catch(e){}
+        const t = this.token;
+        problem = (r.status === 401 ? "GitHub rejected that key" : r.status === 404 ? "That key can't see the repository " + this.repo : "GitHub error") +
+          ` — status ${r.status}${msg ? ', GitHub says: "' + msg + '"' : ""}. (Key length ${t.length}, starts with "${t.slice(0, 11)}".)`;
+        if (r.status >= 500) throw new Error(problem);
+        try { localStorage.removeItem("crm.ghtoken"); } catch(e){}
+      }
+      await this.askToken(problem);
+    }
+  },
+  askToken(problem){
+    return new Promise(res => { const dlg = $("#dlg");
+      dlg.innerHTML = `<form method="dialog" class="form" id="tk"><div class="full"><b>Connect to your private data repository</b><p style="margin:6px 0;color:var(--mute)">Paste the access key you created on GitHub (it starts with <code>github_pat_</code>). It is stored only on this device.</p>
+        ${problem ? `<div class="hint">${esc(problem)}</div>` : ""}<input type="password" id="tkIn" placeholder="github_pat_…" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore name="crm-access-key" style="margin-top:8px">
+        <label style="margin-top:6px"><input type="checkbox" id="tkShow" style="width:auto"> Show the key while I paste it</label></div>
+        <div class="full acts"><span class="sp"></span><button class="btn primary" type="submit">Connect</button></div></form>`;
+      dlg.addEventListener("cancel", e => e.preventDefault(), {once: true}); dlg.showModal();
+      $("#tkShow").onchange = e => { $("#tkIn").type = e.target.checked ? "text" : "password"; };
+      // (the key is cleaned of spaces, line breaks and invisible characters)
+      $("#tk").onsubmit = e => { e.preventDefault(); const v = $("#tkIn").value.replace(/[^A-Za-z0-9_]/g, ""); if (!v) return; try { localStorage.setItem("crm.ghtoken", v); } catch(e){} dlg.close(); res(); }; });
+  },
+  b64dec(b64){ const bin = atob(b64.replace(/\n/g, "")); return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))); },
+  b64enc(str){ const bytes = new TextEncoder().encode(str); let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(bin); },
+  async getFile(name){
+    const r = await this.api("/contents/" + name); if (r.status === 404) return null;
+    if (!r.ok) throw new Error("GitHub error " + r.status + " reading " + name);
+    const j = await r.json(); let text;
+    if (j.content) text = this.b64dec(j.content);
+    else { const b = await this.api("/git/blobs/" + j.sha); if (!b.ok) throw new Error("GitHub error " + b.status); text = this.b64dec((await b.json()).content); }   // files over 1 MB
+    return {text, sha: j.sha};
+  },
+  async load(){ const f = await this.getFile("crm.json"); return f ? {data: JSON.parse(f.text), etag: f.sha} : {data: null, etag: null}; },
+  async put(name, obj, sha, message){
+    const r = await this.api("/contents/" + name, {method: "PUT", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({message, content: this.b64enc(JSON.stringify(obj, null, 1)), ...(sha ? {sha} : {})})});
+    if (r.status === 409 || r.status === 422) throw new Conflict();
+    if (!r.ok) throw new Error("GitHub save failed (" + r.status + ")");
+    return (await r.json()).content.sha;
+  },
+  async save(data, etag){
+    data.rev = (data.rev||0) + 1;
+    try { return {etag: await this.put("crm.json", data, etag, "Update contacts (rev " + data.rev + ")")}; }
+    catch (e) { data.rev--; throw e; }
+  },
+  async readLock(){ const f = await this.getFile("lock.json"); this.lockSha = f ? f.sha : null; return f ? JSON.parse(f.text) : null; },
+  async writeLock(lock){ if (this.lockSha === null) await this.readLock().catch(() => {});
+    try { this.lockSha = await this.put("lock.json", lock, this.lockSha, "lock"); }
+    catch (e) { if (e instanceof Conflict) { await this.readLock(); this.lockSha = await this.put("lock.json", lock, this.lockSha, "lock"); } else throw e; } },
+  async dropLock(){ if (!this.lockSha) return;
+    try { fetch("https://api.github.com/repos/" + this.repo + "/contents/lock.json", {method: "DELETE", keepalive: true,
+      headers: {Authorization: "Bearer " + this.token, Accept: "application/vnd.github+json", "Content-Type": "application/json"}, body: JSON.stringify({message: "unlock", sha: this.lockSha})}); } catch(e){} },
+  signOut(){ try { localStorage.removeItem("crm.ghtoken"); } catch(e){} location.reload(); }
+};
+
+/* ============================== state ============================== */
+const store = CFG.GITHUB_REPO ? GitHubStore : LocalStore;
+const SORTS = [["date", "Next action date"], ["priority", "Priority"], ["name", "Name A–Z"], ["last", "Last name A–Z"],
+               ["company", "Company A–Z"], ["updated", "Recently updated"], ["stale", "Not touched longest"]];
+function loadSort(){ try { const v = localStorage.getItem("crm.sort"); return SORTS.some(x => x[0] === v) ? v : "date"; } catch(e){ return "date"; } }
+// Tell password managers (1Password, LastPass, Bitwarden) and the browser not to offer to fill these fields.
+function noAutofill(root){ root.querySelectorAll("input,textarea,select").forEach(el => {
+  el.setAttribute("autocomplete", "off"); el.setAttribute("name", "f" + Math.random().toString(36).slice(2, 8)); el.setAttribute("data-1p-ignore", ""); el.setAttribute("data-lpignore", "true"); el.setAttribute("data-bwignore", "true"); el.setAttribute("data-form-type", "other"); }); }
+// A reload (F5) keeps the same id, so this tab reclaims its own lock; another tab or device gets a different id.
+function sessionId(){ try { let v = sessionStorage.getItem("crm.sid"); if (!v) { v = newId(); sessionStorage.setItem("crm.sid", v); } return v; } catch(e){ return newId(); } }
+const S = {sort: loadSort(), data: null, etag: null, readOnly: false, view: "list", month: new Date(), selDay: null,
+           prios: new Set(), due: false, archived: false, q: "", saving: 0, session: sessionId()};
+const LOCK_TTL = store.lockTtl || 150000, HEARTBEAT = store.heartbeat || 45000;
+const deviceLabel = /Android|iPhone|Mobile/i.test(navigator.userAgent) ? "your phone" : "your computer";
+
+function setStatus(text, cls){ const el = $("#status"); el.textContent = text; el.className = "pill " + (cls||""); }
+let toastTimer;
+function toast(msg, actionLabel, action){
+  $("#toastMsg").textContent = msg; const b = $("#toastBtn");
+  b.style.display = actionLabel ? "" : "none"; b.textContent = actionLabel||""; b.onclick = () => { $("#toast").style.display = "none"; action && action(); };
+  $("#toast").style.display = "flex"; clearTimeout(toastTimer); toastTimer = setTimeout(() => $("#toast").style.display = "none", actionLabel ? 9000 : 3500);
+}
+
+/* ---- single-writer lock (friendly layer; the eTag check is the hard guarantee) ---- */
+async function acquireLock(force){
+  S.readOnly = false;
+  let lock = null; try { lock = await store.readLock(); } catch(e){}
+  const fresh = lock && lock.session !== S.session && Date.now() - lock.ts < LOCK_TTL;
+  if (fresh && !force) { S.readOnly = true; S.lockInfo = lock; return false; }
+  if (!(lock && lock.session === S.session && Date.now() - lock.ts < 60000)) await store.writeLock({session: S.session, device: deviceLabel, ts: Date.now()});
+  S.lockInfo = null; return true;
+}
+async function heartbeat(){
+  if (document.hidden || S.readOnly) return;
+  try { const lock = await store.readLock();
+    if (lock && lock.session !== S.session && Date.now() - lock.ts < LOCK_TTL) { S.readOnly = true; S.lockInfo = lock; render(); return; }
+    await store.writeLock({session: S.session, device: deviceLabel, ts: Date.now()});
+  } catch(e){}
+}
+
+async function loadAll(forceLock){
+  setStatus("Loading…");
+  const got = await acquireLock(forceLock);
+  const r = await store.load(); S.data = r.data || {version: 1, rev: 0, contacts: []}; S.etag = r.etag;
+  setStatus(S.readOnly ? "Read-only" : "Saved", S.readOnly ? "bad" : "ok");
+  render();
+}
+
+/* mutate: apply fn(data) and save; if another writer got in first, reload and re-apply fn on fresh data */
+async function mutate(fn){
+  if (S.readOnly) { toast("Read-only: the app is open on another device"); return false; }
+  for (let attempt = 0; attempt < 3; attempt++) {
+    fn(S.data); S.saving++; setStatus("Saving…"); render();
+    try { const r = await store.save(S.data, S.etag); S.etag = r.etag; S.saving--; setStatus("Saved", "ok"); render(); return true; }
+    catch (e) {
+      S.saving--;
+      if (e instanceof Conflict) { const r = await store.load(); S.data = r.data; S.etag = r.etag; toast("Another device changed the data — merged and retrying"); continue; }
+      setStatus("Save failed", "bad"); toast("Save failed: " + e.message); await loadAll(); return false;
+    }
+  }
+  setStatus("Save failed", "bad"); return false;
+}
+
+/* ============================== filtering ============================== */
+function matchesText(c, q){ return !q || (c.name + " " + c.company).toLowerCase().includes(q.toLowerCase()); }
+function matchesPrio(c){ return S.prios.size ? S.prios.has(c.priority) : true; }
+function visible({ignoreDue, ignorePrio} = {}){
+  const t = todayIso();
+  return S.data.contacts.filter(c =>
+    (S.archived ? c.priority === 99 : c.priority !== 99) && matchesText(c, S.q) && (ignorePrio || matchesPrio(c)) &&
+    (ignoreDue || !S.due || (c.nextDate && c.nextDate <= t)));
+}
+function sortList(a, mode = S.sort){
+  const dk = c => c.nextDate || "9999-99-99", cs = (x, y) => x.localeCompare(y, undefined, {sensitivity: "base"});
+  const byName = (x, y) => cs(x.name, y.name), byDate = (x, y) => dk(x) < dk(y) ? -1 : dk(x) > dk(y) ? 1 : 0;
+  const lastName = c => c.name.trim().split(/\s+/).pop() || "";
+  const cmp = {
+    date: (x, y) => byDate(x, y) || x.priority - y.priority || byName(x, y),                  // soonest first, undated last
+    priority: (x, y) => x.priority - y.priority || byDate(x, y) || byName(x, y),               // P0, P1, P2 ... then soonest
+    name: byName,
+    last: (x, y) => cs(lastName(x), lastName(y)) || byName(x, y),
+    company: (x, y) => (!x.company) - (!y.company) || cs(x.company, y.company) || byName(x, y), // blank companies last
+    updated: (x, y) => (y.updated || "").localeCompare(x.updated || "") || byName(x, y),       // newest changes first
+    stale: (x, y) => (x.updated || "").localeCompare(y.updated || "") || byName(x, y)          // never/longest untouched first
+  }[mode] || byName;
+  return a.sort(cmp);
+}
+
+/* ============================== rendering ============================== */
+function render(){
+  if (!S.data) { $("#view").innerHTML = `<div class="empty">Loading…</div>`; return; }
+  renderBanner(); renderChips();
+  $("#sortSel").style.display = S.view === "list" ? "" : "none";
+  $("#fab").disabled = S.readOnly; $("#btnResched").disabled = S.readOnly;
+  $("#tabList").classList.toggle("on", S.view === "list"); $("#tabCal").classList.toggle("on", S.view === "cal");
+  if (!S.data.contacts.length) { $("#view").innerHTML = `<div class="empty">No contacts yet.<br><br><button class="btn primary" id="emptyImport">Import your contacts (Excel or CSV)</button></div>`; $("#emptyImport").onclick = () => $("#file").click(); return; }
+  S.view === "list" ? renderList() : renderCal();
+}
+function renderBanner(){
+  const b = $("#banner");
+  if (S.readOnly) {
+    const mins = S.lockInfo ? Math.max(0, Math.round((Date.now() - S.lockInfo.ts)/60000)) : 0;
+    b.innerHTML = `<div class="banner"><span>Open on <b>${esc(S.lockInfo?.device||"another device")}</b> (active ${mins} min ago). Editing is disabled here so the two can't overwrite each other.</span><button class="btn" id="takeover">Take over</button></div>`;
+    $("#takeover").onclick = async () => { await loadAll(true); toast("You now have the lock"); };
+  } else b.innerHTML = "";
+}
+function renderChips(){
+  const present = [...new Set(S.data.contacts.filter(c => c.priority !== 99).map(c => c.priority))].sort((a,b) => a-b);
+  const t = todayIso(), dueN = S.data.contacts.filter(c => c.priority !== 99 && c.nextDate && c.nextDate <= t).length;
+  $("#chips").innerHTML =
+    `<button class="chip ${S.due?"on":""}" data-due>Due (${dueN})</button>` +
+    present.map(p => `<button class="chip ${S.prios.has(p)?"on":""}" data-p="${p}">P${p}</button>`).join("") +
+    `<button class="chip ${S.archived?"on":""}" data-arch>Archived (99)</button>`;
+}
+function whenHtml(c){
+  if (!c.nextDate) return "";
+  const t = todayIso(), cls = c.nextDate < t ? "over" : c.nextDate === t ? "today" : "";
+  return `<span class="when ${cls}">${esc(c.nextAction||"")} ${fmtDate(c.nextDate)}</span>`;
+}
+function cardHtml(c){
+  return `<div class="card" data-id="${c.id}"><div class="top"><span class="pr p${c.priority}">${c.priority}</span><span class="nm">${esc(c.name)}</span><span class="co">${esc(c.company)}</span>${whenHtml(c)}</div>${c.lastInteraction ? `<div class="note">${esc(c.lastInteraction)}</div>` : ""}</div>`;
+}
+function hiddenMatchNote(){
+  if (!S.q || !S.prios.size) return "";
+  const all = visible({ignorePrio: true}).length - visible().length;
+  return all > 0 ? `<div class="banner"><span>Found ${all} additional match${all>1?"es":""} outside the current priority filter.</span><button class="btn" id="clearPrio">Show them</button></div>` : "";
+}
+function renderList(){
+  const list = sortList(visible());
+  $("#view").innerHTML = `<div class="count">${list.length} contact${list.length===1?"":"s"}</div>${hiddenMatchNote()}` +
+    (list.length ? list.map(cardHtml).join("") : `<div class="empty">No matches.</div>`);
+  const cp = $("#clearPrio"); if (cp) cp.onclick = () => { S.prios.clear(); render(); };
+}
+function renderCal(){
+  const m = S.month, first = new Date(m.getFullYear(), m.getMonth(), 1), start = new Date(first); start.setDate(1 - first.getDay());
+  const byDay = {}; visible({ignoreDue: true}).forEach(c => { if (c.nextDate) (byDay[c.nextDate] ||= []).push(c); });
+  const t = todayIso(); let cells = "";
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i); const k = isoOf(d), ev = (byDay[k]||[]).sort((a,b) => a.priority - b.priority);
+    if (i >= 35 && d.getMonth() !== m.getMonth()) break;
+    cells += `<div class="day ${d.getMonth()!==m.getMonth()?"out":""} ${k===t?"today":""} ${k===S.selDay?"sel":""}" data-day="${k}"><span class="n">${d.getDate()}</span>` +
+      ev.slice(0,4).map(c => `<div class="ev" data-id="${c.id}">${esc(c.name)}</div>`).join("") + (ev.length>4 ? `<div class="more">+${ev.length-4} more</div>` : "") +
+      (ev.length ? `<div class="dots">${ev.slice(0,6).map(()=>"<i></i>").join("")}</div>` : "") + `</div>`;
+  }
+  const sel = S.selDay ? sortList(byDay[S.selDay] ? [...byDay[S.selDay]] : [], "date") : [];
+  $("#view").innerHTML = `<div class="row" style="margin-top:6px"><button class="btn" id="prevM">‹</button><b class="grow" style="text-align:center">${m.toLocaleString(undefined,{month:"long",year:"numeric"})}</b><button class="btn" id="todayM">Today</button><button class="btn" id="nextM">›</button></div>` +
+    `<div class="cal">${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>`<div class="dow">${d}</div>`).join("")}${cells}</div>` +
+    (S.selDay ? `<div class="count">${fmtDate(S.selDay)} — ${sel.length} scheduled</div>${sel.map(cardHtml).join("")}` : "");
+  $("#prevM").onclick = () => { S.month = new Date(m.getFullYear(), m.getMonth()-1, 1); renderCal(); };
+  $("#nextM").onclick = () => { S.month = new Date(m.getFullYear(), m.getMonth()+1, 1); renderCal(); };
+  $("#todayM").onclick = () => { S.month = new Date(); S.selDay = todayIso(); renderCal(); };
+}
+
+/* ============================== edit form ============================== */
+// The contacts, in the order they are currently displayed, for the Prev/Next buttons in the edit form.
+function navIds(el){
+  if (S.view === "list") return sortList(visible()).map(c => c.id);
+  const cell = el.closest("[data-day]"), k = cell ? cell.dataset.day : S.selDay;      // calendar: the people listed for that day
+  return sortList(visible({ignoreDue: true}).filter(c => c.nextDate === k), "date").map(c => c.id);
+}
+function fmtPhone(v){ let d = v.replace(/\D/g, ""); if (d.length === 11 && d[0] === "1") d = d.slice(1); return d.length === 10 ? `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}` : v; }
+function openForm(id, ids){
+  const isNew = !id, c = isNew ? {id: newId(), name:"", company:"", email:"", phone:"", priority:0, nextDate:"", nextAction:"", lastInteraction:"", history:"", updated:""} : S.data.contacts.find(x => x.id === id);
+  if (!c) return;
+  const ro = S.readOnly ? "disabled" : "";
+  const prOpts = [...Array(11).keys(), 99].map(p => `<option value="${p}" ${p===c.priority?"selected":""}>${p===99?"99 (archived)":p}</option>`).join("");
+  const idx = !isNew && ids ? ids.indexOf(id) : -1, showNav = idx >= 0 && ids.length > 1;
+  const dlg = $("#dlg");
+  dlg.innerHTML = `<form method="dialog" class="form" id="f" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true"><div id="sink" tabindex="-1" style="grid-column:1/-1;height:0;margin-bottom:-10px;outline:none"></div>
+    <div class="full grip" id="grip" title="Drag to move this window">⠿ drag to move</div>
+    ${showNav ? `<div class="full nav"><button type="button" class="btn" id="navPrev" ${idx === 0 ? "disabled" : ""}>‹ Prev</button><span class="navpos">${idx + 1} of ${ids.length}</span><button type="button" class="btn" id="navNext" ${idx === ids.length - 1 ? "disabled" : ""}>Next ›</button></div>` : ""}
+    <div><label>Name</label><input type="text" id="fName" value="${esc(c.name)}" ${ro} required></div>
+    <div><label>Company</label><input type="text" id="fCo" value="${esc(c.company)}" ${ro}></div>
+    <div><label>Email <a class="lnk" id="mailLnk" href="#">Send</a></label><input type="text" inputmode="email" id="fEmail" value="${esc(c.email)}" ${ro}></div>
+    <div><label>Phone <a class="lnk" id="telLnk" href="#">Call</a></label><input type="text" inputmode="tel" id="fPhone" value="${esc(c.phone)}" ${ro}><div class="hint" id="phHint"></div></div>
+    <div><label>Priority</label><select id="fPrio" ${ro} required>${prOpts}</select></div>
+    <div><label>Next action date <a class="lnk" id="clrDate" href="#">Clear</a></label><input type="date" id="fDate" value="${esc(c.nextDate||"")}" ${ro}></div>
+    <div class="full"><label>Next action</label><input type="text" id="fAct" value="${esc(c.nextAction)}" ${ro}></div>
+    <div class="full"><label>Last interaction <a class="lnk" id="addDate" href="#">+ date (Ctrl+D)</a></label><textarea id="fLast" rows="6" ${ro}>${esc(c.lastInteraction)}</textarea></div>
+    <div class="full"><label>History</label><textarea id="fHist" rows="4" ${ro}>${esc(c.history)}</textarea></div>
+    <div class="full" style="font-size:12px;color:var(--mute)">${c.updated ? "Last updated " + esc(c.updated.replace("T"," ")) : "New contact"}</div>
+    <div class="full acts">
+      ${isNew ? "" : `<button type="button" class="btn danger" id="fArch" ${ro}>${c.priority===99 ? "Already archived" : "Archive (99)"}</button>`}
+      <span class="sp"></span><button type="button" class="btn" id="fCancel">Cancel</button><button type="submit" class="btn primary" id="fSave" ${ro}>Save</button>
+    </div></form>`;
+  dlg.showModal();
+  noAutofill(dlg);
+  enableDrag(dlg);
+  $("#sink", dlg)?.focus();   // keep focus off the first field so password managers do not pop up on open
+  const g = s => $(s, dlg);
+  const phoneCheck = () => { const d = g("#fPhone").value.replace(/\D/g,""); g("#phHint").textContent = g("#fPhone").value && ![10,11].includes(d.length) ? "Expected 10 digits" : ""; };
+  g("#fPhone").onblur = () => { g("#fPhone").value = fmtPhone(g("#fPhone").value); phoneCheck(); };
+  g("#mailLnk").onclick = e => { e.preventDefault(); if (g("#fEmail").value.includes("@")) location.href = "mailto:" + g("#fEmail").value.trim(); };
+  g("#telLnk").onclick = e => { e.preventDefault(); const d = g("#fPhone").value.replace(/[^\d+]/g,""); if (d) location.href = "tel:" + d; };
+  const addDate = () => { const ta = g("#fLast"), d = new Date(), prefix = `${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}- `;
+    const cur = ta.value; ta.value = prefix + (cur ? "\n" + cur : ""); ta.focus(); ta.setSelectionRange(prefix.length, prefix.length); };
+  g("#addDate").onclick = e => { e.preventDefault(); if (!S.readOnly) addDate(); };
+  g("#fLast").onkeydown = e => { if (e.ctrlKey && e.key.toLowerCase() === "d") { e.preventDefault(); if (!S.readOnly) addDate(); } };
+  g("#fCancel").onclick = () => dlg.close();
+  g("#clrDate").onclick = e => { e.preventDefault(); if (!S.readOnly) g("#fDate").value = ""; };
+  // Priority 9: the contact's name is also the company (asks first if a different company is already there).
+  g("#fPrio").onchange = () => { if (g("#fPrio").value !== "9") return;
+    const nm = g("#fName").value.trim(), co = g("#fCo").value.trim();
+    if (nm && co !== nm && (!co || confirm(`Replace the company "${co}" with "${nm}"?`))) g("#fCo").value = nm; };
+  const arch = g("#fArch"); if (arch) arch.onclick = async () => { if (c.priority === 99) return; if (confirm("Archive this contact (priority 99)?")) { dlg.close(); await mutate(d => { const x = d.contacts.find(z => z.id === c.id); x.priority = 99; x.updated = nowIso(); }); } };
+  const collect = () => {
+    const n = {name: g("#fName").value.trim(), company: g("#fCo").value.trim(), email: g("#fEmail").value.trim(), phone: fmtPhone(g("#fPhone").value.trim()),
+      priority: Number(g("#fPrio").value), nextDate: g("#fDate").value || null, nextAction: g("#fAct").value.trim(), lastInteraction: g("#fLast").value, history: g("#fHist").value};
+    if (n.priority === 9 && !n.company) n.company = n.name;
+    return n; };
+  const changedFrom = n => isNew || Object.keys(n).some(k => (n[k] ?? "") !== (c[k] ?? ""));
+  const saveForm = async () => {          // true = saved or nothing to save; false = stay on this contact
+    if (!g("#f").reportValidity()) return false;
+    const n = collect(); if (!n.name) return false;
+    if (!changedFrom(n)) return true;
+    return await mutate(d => { let x = d.contacts.find(z => z.id === c.id); if (!x) { x = {id: c.id}; d.contacts.push(x); } Object.assign(x, n, {updated: nowIso()}); }); };
+  g("#f").onsubmit = async e => { e.preventDefault(); if (S.readOnly) return; if (await saveForm()) dlg.close(); };
+  if (showNav) { const go = async step => {   // Prev/Next: save any edits first, then open the neighbour in the displayed order
+      if (!S.readOnly && !(await saveForm())) return;
+      dlg.close(); openForm(ids[idx + step], ids); };
+    g("#navPrev").onclick = () => go(-1); g("#navNext").onclick = () => go(1); }
+}
+
+/* ============================== actions ============================== */
+async function reschedule(){
+  const t = todayIso(), od = S.data.contacts.filter(c => c.priority !== 99 && c.nextDate && c.nextDate < t);
+  if (!od.length) { toast("Nothing overdue"); return; }
+  if (!confirm(`Move ${od.length} overdue contact${od.length>1?"s":""} to today?\n(Priority 99 is skipped.)`)) return;
+  const undo = od.map(c => ({id: c.id, nextDate: c.nextDate, updated: c.updated})), ids = new Set(od.map(c => c.id));
+  const ok = await mutate(d => d.contacts.forEach(c => { if (ids.has(c.id) && c.priority !== 99 && c.nextDate && c.nextDate < t) { c.nextDate = t; c.updated = nowIso(); } }));
+  if (ok) toast(`${od.length} moved to today`, "Undo", () => mutate(d => undo.forEach(u => { const c = d.contacts.find(z => z.id === u.id); if (c) { c.nextDate = u.nextDate; c.updated = u.updated; } })));
+}
+function download(name, text, type){ const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], {type})); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
+function exportCsv(){
+  const cols = ["name","company","email","phone","priority","nextDate","nextAction","lastInteraction","history","updated"];
+  const q = v => `"${String(v ?? "").replace(/"/g,'""')}"`;
+  download(`contacts_${todayIso()}.csv`, [cols.join(","), ...S.data.contacts.map(c => cols.map(k => q(c[k])).join(","))].join("\r\n"), "text/csv");
+}
+/* ---- import: .json (app format), .csv, or .xlsx/.xlsm (the old Excel CRM) ---- */
+function parseCsv(text){
+  const rows = []; let row = [], f = "", q = false;
+  text = text.replace(/^﻿/, "");
+  for (let i = 0; i < text.length; i++) { const ch = text[i];
+    if (q) { if (ch === '"') { if (text[i+1] === '"') { f += '"'; i++; } else q = false; } else f += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ",") { row.push(f); f = ""; }
+    else if (ch === "\n" || ch === "\r") { if (ch === "\r" && text[i+1] === "\n") i++; row.push(f); rows.push(row); row = []; f = ""; }
+    else f += ch; }
+  if (f !== "" || row.length) { row.push(f); rows.push(row); }
+  return rows;
+}
+function loadScript(src){ return new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => rej(new Error("Could not load the Excel reader (are you online?)")); document.head.appendChild(s); }); }
+async function readXlsxRows(file){
+  if (!window.XLSX) await loadScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js");
+  const wb = XLSX.read(await file.arrayBuffer(), {type: "array"});
+  const name = wb.SheetNames.find(n => n.toLowerCase() === "contacts") || wb.SheetNames[0], ws = wb.Sheets[name];
+  const rng = XLSX.utils.decode_range(ws["!ref"]), rows = [];
+  for (let r = rng.s.r; r <= rng.e.r; r++) { const row = [];
+    for (let c = rng.s.c; c <= Math.min(rng.e.c, 40); c++) { const cell = ws[XLSX.utils.encode_cell({r, c})];
+      row.push(!cell ? "" : cell.t === "n" ? {n: cell.v, w: cell.w ?? String(cell.v)} : (cell.v ?? "")); }   // numbers keep both raw value and displayed text
+    rows.push(row); }
+  return rows;
+}
+const clean = v => String(v !== null && typeof v === "object" ? v.w : v ?? "").replace(/_x000D_/g, "").replace(/\r+\n?/g, "\n").replace(/ /g, " ").trim();
+function serialToIso(n){ const d = new Date(Math.round((n - 25569) * 86400) * 1000); return {date: `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`, time: `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`}; }
+function toIsoDate(v){
+  if (v && typeof v === "object") return serialToIso(v.n).date;
+  v = clean(v); let m;
+  if ((m = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
+  if ((m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/))) { let y = +m[3]; if (y < 100) y += 2000; return `${y}-${pad(m[1])}-${pad(m[2])}`; }
+  return null;
+}
+function toIsoStamp(v){
+  if (v && typeof v === "object") { const x = serialToIso(v.n); return `${x.date}T${x.time}`; }
+  v = clean(v); let m;
+  if ((m = v.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(:\d{2})?)/))) return `${m[1]}T${m[2]}${m[3] ? "" : ":00"}`;
+  if ((m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})\s*([AP]M)?/i))) { let h = +m[4]; if (m[6]) { h = h % 12 + (/p/i.test(m[6]) ? 12 : 0); } return `${m[3]}-${pad(m[1])}-${pad(m[2])}T${pad(h)}:${m[5]}:00`; }
+  const d = toIsoDate(v); return d ? d + "T00:00:00" : "";
+}
+function rowsToContacts(rows){
+  const key = h => String(h ?? "").toLowerCase().replace(/[^a-z]/g, "");
+  const MAP = {name:"name", company:"company", email:"email", phone:"phone", priority:"priority", nextactiondate:"nextDate", nextdate:"nextDate", date:"nextDate",
+    nextaction:"nextAction", action:"nextAction", lastinteraction:"lastInteraction", notes:"lastInteraction", history:"history", update:"updated", updated:"updated", lastupdated:"updated"};
+  const hi = rows.findIndex((r, i) => i < 15 && r.some(c => key(c) === "name") && r.some(c => MAP[key(c)] && key(c) !== "name"));
+  if (hi < 0) throw new Error("couldn't find a header row with a Name column");
+  const cols = rows[hi].map(h => MAP[key(h)] || null), seen = new Set(), out = [];
+  for (const r of rows.slice(hi + 1)) {
+    const o = {}; cols.forEach((k, i) => { if (k && !(k in o)) o[k] = r[i]; });
+    const name = clean(o.name); if (!name) continue;
+    let pr = o.priority && typeof o.priority === "object" ? Math.round(o.priority.n) : parseInt(clean(o.priority), 10); if (isNaN(pr)) pr = 9;
+    out.push({id: newId(), name, company: clean(o.company), email: clean(o.email), phone: fmtPhone(clean(o.phone)), priority: pr, nextDate: toIsoDate(o.nextDate),
+      nextAction: clean(o.nextAction), lastInteraction: clean(o.lastInteraction), history: clean(o.history), updated: toIsoStamp(o.updated)});
+  }
+  return out;
+}
+function enableDrag(dlg){
+  const grip = dlg.querySelector("#grip"); if (!grip || innerWidth <= 600) { dlg.style.cssText = ""; return; }
+  const clamp = (x, y) => [Math.min(Math.max(0, x), Math.max(0, innerWidth - 120)), Math.min(Math.max(0, y), Math.max(0, innerHeight - 60))];
+  const place = (x, y) => { [x, y] = clamp(x, y); dlg.style.position = "fixed"; dlg.style.margin = "0"; dlg.style.left = x + "px"; dlg.style.top = y + "px"; return [x, y]; };
+  let saved = null; try { saved = JSON.parse(localStorage.getItem("crm.dlgpos")); } catch(e){}
+  if (saved && typeof saved.x === "number") place(saved.x, saved.y); else dlg.style.cssText = "";
+  let d = null;
+  grip.onpointerdown = e => { const r = dlg.getBoundingClientRect(); d = {dx: e.clientX - r.left, dy: e.clientY - r.top}; place(r.left, r.top); grip.setPointerCapture(e.pointerId); e.preventDefault(); };
+  grip.onpointermove = e => { if (d) place(e.clientX - d.dx, e.clientY - d.dy); };
+  grip.onpointerup = e => { if (!d) return; d = null; const r = dlg.getBoundingClientRect(); try { localStorage.setItem("crm.dlgpos", JSON.stringify({x: Math.round(r.left), y: Math.round(r.top)})); } catch(x){} };
+  grip.ondblclick = () => { dlg.style.cssText = ""; try { localStorage.removeItem("crm.dlgpos"); } catch(x){} };
+}
+async function importFile(file){
+  try {
+    const ext = file.name.split(".").pop().toLowerCase(); let contacts;
+    if (ext === "json") { const d = JSON.parse(await file.text()); if (!Array.isArray(d.contacts)) throw new Error("not a CRM file"); contacts = d.contacts; }
+    else if (ext === "csv") contacts = rowsToContacts(parseCsv(await file.text()));
+    else if (ext === "xlsx" || ext === "xlsm" || ext === "xls") contacts = rowsToContacts(await readXlsxRows(file));
+    else throw new Error("use a .xlsx, .xlsm, .csv or .json file");
+    if (!contacts.length) throw new Error("no contacts found");
+    const n = S.data ? S.data.contacts.length : 0;
+    if (n && !confirm(`Replace the ${n} existing contacts with ${contacts.length} from this file?`)) return;
+    await mutate(x => { x.contacts = contacts; x.version = 1; });
+    toast(`Imported ${contacts.length} contacts`);
+  } catch (e) { toast("Import failed: " + e.message); }
+}
+
+/* ============================== wiring ============================== */
+$("#q").oninput = e => { S.q = e.target.value.trim(); render(); };
+$("#chips").onclick = e => { const b = e.target.closest(".chip"); if (!b) return;
+  if (b.hasAttribute("data-due")) S.due = !S.due; else if (b.hasAttribute("data-arch")) S.archived = !S.archived;
+  else { const p = Number(b.dataset.p); S.prios.has(p) ? S.prios.delete(p) : S.prios.add(p); } render(); };
+$("#view").onclick = e => {
+  const card = e.target.closest("[data-id]"); if (card) { e.stopPropagation(); openForm(card.dataset.id, navIds(card)); return; }
+  const day = e.target.closest("[data-day]"); if (day) { S.selDay = day.dataset.day; renderCal(); }
+};
+$("#sortSel").innerHTML = SORTS.map(([v, l]) => `<option value="${v}">Sort: ${l}</option>`).join(""); $("#sortSel").value = S.sort;
+$("#sortSel").onchange = e => { S.sort = e.target.value; try { localStorage.setItem("crm.sort", S.sort); } catch(_) {} render(); };
+$("#tabList").onclick = () => { S.view = "list"; render(); };
+$("#tabCal").onclick = () => { S.view = "cal"; render(); };
+$("#fab").onclick = () => openForm(null);
+$("#btnResched").onclick = reschedule;
+$("#btnMenu").onclick = e => { e.stopPropagation(); const m = $("#menu"); m.style.display = m.style.display === "block" ? "none" : "block"; };
+document.addEventListener("click", () => $("#menu").style.display = "none");
+$("#menu").onclick = async e => { const a = e.target.dataset.act; if (!a) return;
+  if (a === "export") download(`crm_backup_${todayIso()}.json`, JSON.stringify(S.data, null, 1), "application/json");
+  if (a === "csv") exportCsv();
+  if (a === "import") $("#file").click();
+  if (a === "reload") { await loadAll(); toast("Reloaded"); }
+  if (a === "signout") { if (store.signOut) { if (confirm("Remove the saved access key from this device?")) store.signOut(); } else toast("Not connected (local test mode)"); } };
+$("#file").onchange = e => { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ""; };
+document.addEventListener("visibilitychange", () => { if (!document.hidden && S.data && !S.saving) loadAll(); });
+addEventListener("pagehide", () => { if (!S.readOnly) store.dropLock(); });
+setInterval(heartbeat, HEARTBEAT);
+noAutofill(document);
+
+(async function start(){
+  try {
+    if ("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(() => {});
+    await store.init();
+    if (store === LocalStore) $("h1").textContent = "Contacts (local test mode)";
+    await loadAll();
+  } catch (e) { setStatus("Error", "bad"); $("#view").innerHTML = `<div class="empty">Could not start: ${esc(e.message)}</div>`; }
+})();
+</script>
+</body>
+</html>
