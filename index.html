@@ -4,20 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Contacts CRM</title>
-<meta name="theme-color" content="#1f4e79">
+<meta name="theme-color" content="#1c2c4f">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <style>
-:root{--bg:#f4f6f8;--card:#fff;--ink:#1c2630;--mute:#66727f;--line:#dde3e9;--accent:#1f4e79;--accent-ink:#fff;--warn:#b45309;--warn-bg:#fef3c7;--bad:#b91c1c;--ok:#15803d;--chip:#e8eef4;--cal:#d6e8f5}
-@media (prefers-color-scheme:dark){:root{--bg:#12171c;--card:#1b232b;--ink:#e6ebf0;--mute:#93a1ae;--line:#2c3742;--accent:#5fa3dc;--accent-ink:#0b1620;--warn:#fbbf24;--warn-bg:#3a2e0b;--bad:#f87171;--ok:#4ade80;--chip:#26323d;--cal:#24435c}}
+:root{--bg:#f6f1e6;--card:#fffdf8;--ink:#1c2740;--mute:#657089;--line:#ddd3bf;--accent:#1f3a63;--accent-ink:#fff;--warn:#8a5a14;--warn-bg:#f3e8c8;--bad:#b91c1c;--ok:#15803d;--chip:#ebe3d0;--cal:#d5dfeb;--hero-a:#efe6d4;--hero-b:rgba(239,230,212,0);--gold:#b09a6c}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1626;--card:#172036;--ink:#e8e4d8;--mute:#9aa5ba;--line:#2a3550;--accent:#c4ad7c;--accent-ink:#101828;--warn:#fbbf24;--warn-bg:#3a2e0b;--bad:#f87171;--ok:#4ade80;--chip:#222d47;--cal:#26385c;--hero-a:#101828;--hero-b:rgba(16,24,40,.62);--gold:#c4ad7c}}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer}
-header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);padding:8px 16px;padding-top:max(8px,env(safe-area-inset-top))}
+header{position:sticky;top:0;z-index:5;background:linear-gradient(90deg,var(--hero-a) 0%,var(--hero-a) 30%,var(--hero-b) 62%),url(banner.jpg) right center/cover var(--hero-a);border-bottom:2px solid var(--gold);padding:8px 16px;padding-top:max(8px,env(safe-area-inset-top))}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .grow{flex:1;min-width:140px}
-h1{font-size:17px;margin:0 8px 0 0}
+h1{font-size:19px;margin:0 8px 0 0;letter-spacing:.3px;color:var(--ink)}
 .btn{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:7px 12px}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .btn.danger{color:var(--bad)}
@@ -64,8 +64,8 @@ dialog::backdrop{background:#0008}
 .form .acts .sp{flex:1}
 .hint{font-size:12px;color:var(--warn);margin-top:2px}
 .lnk{font-size:12px;margin-left:6px;color:var(--accent);text-decoration:none}
-#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#1c2630;color:#fff;border-radius:10px;padding:10px 14px;display:none;gap:12px;align-items:center;z-index:20;max-width:92vw}
-#toast button{background:none;border:0;color:#8cc4ff;font-weight:700}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#1c2c4f;color:#fff;border-radius:10px;padding:10px 14px;display:none;gap:12px;align-items:center;z-index:20;max-width:92vw}
+#toast button{background:none;border:0;color:#d9c48f;font-weight:700}
 .empty{text-align:center;color:var(--mute);padding:40px 10px}
 .srow{display:flex;gap:8px;align-items:center;margin-top:8px}
 .srow input[type=search]{width:50%}
@@ -73,9 +73,11 @@ dialog::backdrop{background:#0008}
 .addbtn:disabled{opacity:.4;cursor:not-allowed}
 .srow select{width:auto;flex:none;max-width:190px}
 @media(max-width:600px){.srow select{max-width:118px}}
+.grip{cursor:move;font-size:11px;letter-spacing:.4px;color:var(--ink);padding:0 14px;height:46px;display:flex;align-items:center;user-select:none;touch-action:none;margin:-16px -16px 4px;border-radius:14px 14px 0 0;border-bottom:2px solid var(--gold);background:linear-gradient(90deg,var(--hero-a) 0%,var(--hero-a) 30%,var(--hero-b) 62%),url(banner.jpg) right center/cover var(--hero-a)}
+@media(max-width:600px){.grip{cursor:default;border-radius:0;font-size:0;height:36px}}
 .nav{display:flex;justify-content:space-between;align-items:center;gap:8px;position:sticky;top:0;background:var(--card);padding:2px 0 6px;z-index:2}
 .navpos{color:var(--mute);font-size:13px}
-@media(max-width:600px){.srow input[type=search]{width:auto;flex:1}}
+@media(max-width:600px){.srow input[type=search]{width:auto;flex:1 1 0;min-width:0}}
 menu{margin:0;padding:6px;list-style:none;position:absolute;right:12px;top:48px;background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 20px #0003;display:none;z-index:10;min-width:200px}
 menu button{display:block;width:100%;text-align:left;border:0;background:none;padding:9px 12px;border-radius:6px}
 menu button:hover{background:var(--chip)}
@@ -384,6 +386,7 @@ function openForm(id, ids){
   const idx = !isNew && ids ? ids.indexOf(id) : -1, showNav = idx >= 0 && ids.length > 1;
   const dlg = $("#dlg");
   dlg.innerHTML = `<form method="dialog" class="form" id="f" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true"><div id="sink" tabindex="-1" style="grid-column:1/-1;height:0;margin-bottom:-10px;outline:none"></div>
+    <div class="full grip" id="grip" title="Drag to move this window">⠿ drag to move</div>
     ${showNav ? `<div class="full nav"><button type="button" class="btn" id="navPrev" ${idx === 0 ? "disabled" : ""}>‹ Prev</button><span class="navpos">${idx + 1} of ${ids.length}</span><button type="button" class="btn" id="navNext" ${idx === ids.length - 1 ? "disabled" : ""}>Next ›</button></div>` : ""}
     <div><label>Name</label><input type="text" id="fName" value="${esc(c.name)}" ${ro} required></div>
     <div><label>Company</label><input type="text" id="fCo" value="${esc(c.company)}" ${ro}></div>
@@ -401,6 +404,7 @@ function openForm(id, ids){
     </div></form>`;
   dlg.showModal();
   noAutofill(dlg);
+  enableDrag(dlg);
   $("#sink", dlg)?.focus();   // keep focus off the first field so password managers do not pop up on open
   const g = s => $(s, dlg);
   const phoneCheck = () => { const d = g("#fPhone").value.replace(/\D/g,""); g("#phHint").textContent = g("#fPhone").value && ![10,11].includes(d.length) ? "Expected 10 digits" : ""; };
@@ -507,6 +511,18 @@ function rowsToContacts(rows){
       nextAction: clean(o.nextAction), lastInteraction: clean(o.lastInteraction), history: clean(o.history), updated: toIsoStamp(o.updated)});
   }
   return out;
+}
+function enableDrag(dlg){
+  const grip = dlg.querySelector("#grip"); if (!grip || innerWidth <= 600) { dlg.style.cssText = ""; return; }
+  const clamp = (x, y) => [Math.min(Math.max(0, x), Math.max(0, innerWidth - 120)), Math.min(Math.max(0, y), Math.max(0, innerHeight - 60))];
+  const place = (x, y) => { [x, y] = clamp(x, y); dlg.style.position = "fixed"; dlg.style.margin = "0"; dlg.style.left = x + "px"; dlg.style.top = y + "px"; return [x, y]; };
+  let saved = null; try { saved = JSON.parse(localStorage.getItem("crm.dlgpos")); } catch(e){}
+  if (saved && typeof saved.x === "number") place(saved.x, saved.y); else dlg.style.cssText = "";
+  let d = null;
+  grip.onpointerdown = e => { const r = dlg.getBoundingClientRect(); d = {dx: e.clientX - r.left, dy: e.clientY - r.top}; place(r.left, r.top); grip.setPointerCapture(e.pointerId); e.preventDefault(); };
+  grip.onpointermove = e => { if (d) place(e.clientX - d.dx, e.clientY - d.dy); };
+  grip.onpointerup = e => { if (!d) return; d = null; const r = dlg.getBoundingClientRect(); try { localStorage.setItem("crm.dlgpos", JSON.stringify({x: Math.round(r.left), y: Math.round(r.top)})); } catch(x){} };
+  grip.ondblclick = () => { dlg.style.cssText = ""; try { localStorage.removeItem("crm.dlgpos"); } catch(x){} };
 }
 async function importFile(file){
   try {
