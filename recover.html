@@ -37,6 +37,7 @@ async function fileAt(ref){
   const j = await r.json(); let text;
   if (j.content) text = dec(j.content); else { const b = await api("/git/blobs/" + j.sha); text = dec((await b.json()).content); }
   return {data: JSON.parse(text), sha: j.sha}; }
+const full = c => JSON.stringify(Object.entries(c).filter(([k]) => k !== "updated").sort());
 const ident = c => [c.name, c.company, c.email, c.phone, c.nextAction, c.lastInteraction, c.history].map(x => String(x ?? "").trim().toLowerCase()).join("¦");
 let FOUND = [];
 
@@ -67,8 +68,8 @@ $("#scan").onclick = async () => {
     }
     const maps = vers.map(v => byId(v.data));
     for (const e of events.values()) {                       // was the damaged record edited again afterwards? (then a plain restore could lose that edit)
-      const atK = ident(maps[e.version].get(e.id));
-      for (let j = e.version + 1; j < maps.length; j++) { const a = maps[j].get(e.id); if (a && ident(a) !== atK) { e.editedAfter = true; break; } }
+      const atK = full(maps[e.version].get(e.id));
+      for (let j = e.version + 1; j < maps.length; j++) { const a = maps[j].get(e.id); if (a && full(a) !== atK) { e.editedAfter = true; e.laterRec = a; break; } }
     }
     const latest = await fileAt(null), now = new Map(latest.data.contacts.map(c => [c.id, c]));
     const everSeen = new Map(); vers.forEach(v => v.data.contacts.forEach(c => everSeen.set(c.id, c)));
@@ -83,8 +84,9 @@ $("#scan").onclick = async () => {
     if (FOUND.length) {
       html += `<p>Tick the ones to restore (all ticked by default). Red = what is saved now, green = what will be put back.</p><table><tr><th></th><th>Overwritten on</th><th>Now (wrong)</th><th>Restore to</th></tr>` +
         FOUND.map((e, i) => `<tr><td><input type="checkbox" class="pick" data-i="${i}" ${e.editedAfter ? "" : "checked"}></td><td>${esc(new Date(e.when).toLocaleString())}</td>
-          <td class="cur">${esc(e.now.name)}<br><small>${esc(e.now.company)} ${esc(e.now.email)}</small>${e.editedAfter ? `<br><b>⚠ edited again after the overwrite, not ticked: review with Claude first</b>` : ""}</td>
-          <td class="fix">${esc(e.good.name)}<br><small>${esc(e.good.company)} ${esc(e.good.email)} ${esc(e.good.phone)}${e.good.nextDate ? " · next " + esc(e.good.nextDate) : " · no date"}</small></td></tr>`).join("") + `</table>
+          <td class="cur">${esc(e.now.name)}<br><small>${esc(e.now.company)} ${esc(e.now.email)}</small>${e.editedAfter ? `<br><b>⚠ changed again after the overwrite, not ticked: review with Claude first</b>
+            <br><small>Saved now: priority ${esc(e.now.priority)}, date ${esc(e.now.nextDate || "none")}<br>Next action: ${esc(e.now.nextAction)}<br>Last interaction: ${esc(String(e.now.lastInteraction || "").slice(0, 300))}<br>History: ${esc(String(e.now.history || "").slice(0, 300))}</small>` : ""}</td>
+          <td class="fix">${esc(e.good.name)}<br><small>${esc(e.good.company)} ${esc(e.good.email)} ${esc(e.good.phone)}${e.good.nextDate ? " · next " + esc(e.good.nextDate) : " · no date"}</small>${e.editedAfter ? `<br><small>Priority ${esc(e.good.priority)}<br>Next action: ${esc(e.good.nextAction)}<br>Last interaction: ${esc(String(e.good.lastInteraction || "").slice(0, 300))}<br>History: ${esc(String(e.good.history || "").slice(0, 300))}</small>` : ""}</td></tr>`).join("") + `</table>
         <p><button class="btn" id="dl">Download a copy of today's data first</button> <button class="btn primary" id="apply">2. Restore the ticked contacts</button></p>`;
     } else html += `<p>No overwritten contacts were found in the saved history.</p>`;
     if (missing.length) html += `<div class="box warn"><b>Contacts found in older versions but missing now:</b><ul>${missing.slice(0, 80).map(c => `<li>${esc(c.name)} ${esc(c.company)}</li>`).join("")}</ul><p><button class="btn" id="addMissing">Add these back too</button></p></div>`;
