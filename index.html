@@ -420,7 +420,7 @@ function navIds(el){
 }
 function fmtPhone(v){ let d = v.replace(/\D/g, ""); if (d.length === 11 && d[0] === "1") d = d.slice(1); return d.length === 10 ? `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}` : v; }
 function openForm(id, ids, draft){
-  const isNew = !id, c = isNew ? {id: newId(), name:"", company:"", email:"", phone:"", priority:0, nextDate:"", nextAction:"", lastInteraction:"", history:"", updated:"", ...(draft || {})} : S.data.contacts.find(x => x.id === id);
+  const isNew = !id, c = isNew ? {id: newId(), name:"", company:"", email:"", phone:"", priority:0, nextDate:"", nextAction:"", lastInteraction:"", role:"", history:"", updated:"", ...(draft || {})} : S.data.contacts.find(x => x.id === id);
   if (!c) return;
   const ro = S.readOnly ? "disabled" : "";
   const prOpts = [...Array(11).keys(), 99].map(p => `<option value="${p}" ${p===c.priority?"selected":""}>${p===99?"99 (archived)":p}</option>`).join("");
@@ -437,6 +437,7 @@ function openForm(id, ids, draft){
     <div><label>Next action date <a class="lnk" id="clrDate" href="#">Clear</a></label><input type="date" id="fDate" value="${esc(c.nextDate||"")}" ${ro}></div>
     <div class="full"><label>Next action</label><input type="text" id="fAct" value="${esc(c.nextAction)}" ${ro}></div>
     <div class="full"><label>Last interaction <a class="lnk" id="addDate" href="#">+ date (Ctrl+D)</a></label><textarea id="fLast" rows="6" ${ro}>${esc(c.lastInteraction)}</textarea></div>
+    <div class="full"><label>Current role</label><input type="text" id="fRole" value="${esc(c.role || "")}" ${ro}></div>
     <div class="full"><label>History</label><textarea id="fHist" rows="4" ${ro}>${esc(c.history)}</textarea></div>
     <div class="full" style="font-size:12px;color:var(--mute)">${c.updated ? "Last updated " + esc(c.updated.replace("T"," ")) : "New contact"}</div>
     <div class="full acts">
@@ -465,7 +466,7 @@ function openForm(id, ids, draft){
   const arch = g("#fArch"); if (arch) arch.onclick = async () => { if (c.priority === 99) return; if (confirm("Archive this contact (priority 99)?")) { dlg.close(); await mutate(d => { const x = d.contacts.find(z => z.id === c.id); x.priority = 99; x.updated = nowIso(); }); } };
   const collect = () => {
     const n = {name: g("#fName").value.trim(), company: g("#fCo").value.trim(), email: g("#fEmail").value.trim(), phone: fmtPhone(g("#fPhone").value.trim()),
-      priority: Number(g("#fPrio").value), nextDate: g("#fDate").value || null, nextAction: g("#fAct").value.trim(), lastInteraction: g("#fLast").value, history: g("#fHist").value};
+      priority: Number(g("#fPrio").value), nextDate: g("#fDate").value || null, nextAction: g("#fAct").value.trim(), lastInteraction: g("#fLast").value, role: g("#fRole").value.trim(), history: g("#fHist").value};
     if (n.priority === 9 && !n.company) n.company = n.name;
     return n; };
   const changedFrom = n => isNew || Object.keys(n).some(k => (n[k] ?? "") !== (c[k] ?? ""));
@@ -492,7 +493,7 @@ function openForm(id, ids, draft){
       if (!(await resolveEdits())) return;
       dlg.close(); openForm(ids[idx + step], ids); };
     g("#navPrev").onclick = () => go(-1); g("#navNext").onclick = () => go(1); }
-  const isDirty = () => { const n = collect(); return isNew ? !!(n.name || n.company || n.email || n.phone || n.nextAction || n.lastInteraction || n.history || n.nextDate) : changedFrom(n); };
+  const isDirty = () => { const n = collect(); return isNew ? !!(n.name || n.company || n.email || n.phone || n.nextAction || n.lastInteraction || n.role || n.history || n.nextDate) : changedFrom(n); };
   const resolveEdits = async () => {        // true = OK to leave this form, false = stay
     if (inflight && !(await inflight)) return false;      // let a pending save finish first
     if (S.readOnly || !isDirty()) return true;
@@ -519,7 +520,7 @@ async function reschedule(){
 }
 function download(name, text, type){ const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], {type})); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
 function exportCsv(){
-  const cols = ["name","company","email","phone","priority","nextDate","nextAction","lastInteraction","history","updated"];
+  const cols = ["name","company","email","phone","priority","nextDate","nextAction","lastInteraction","role","history","updated"];
   const q = v => `"${String(v ?? "").replace(/"/g,'""')}"`;
   download(`contacts_${todayIso()}.csv`, [cols.join(","), ...S.data.contacts.map(c => cols.map(k => q(c[k])).join(","))].join("\r\n"), "text/csv");
 }
@@ -567,7 +568,7 @@ function toIsoStamp(v){
 function rowsToContacts(rows){
   const key = h => String(h ?? "").toLowerCase().replace(/[^a-z]/g, "");
   const MAP = {name:"name", company:"company", email:"email", phone:"phone", priority:"priority", nextactiondate:"nextDate", nextdate:"nextDate", date:"nextDate",
-    nextaction:"nextAction", action:"nextAction", lastinteraction:"lastInteraction", notes:"lastInteraction", history:"history", update:"updated", updated:"updated", lastupdated:"updated"};
+    nextaction:"nextAction", action:"nextAction", lastinteraction:"lastInteraction", notes:"lastInteraction", currentrole:"role", role:"role", title:"role", jobtitle:"role", history:"history", update:"updated", updated:"updated", lastupdated:"updated"};
   const hi = rows.findIndex((r, i) => i < 15 && r.some(c => key(c) === "name") && r.some(c => MAP[key(c)] && key(c) !== "name"));
   if (hi < 0) throw new Error("couldn't find a header row with a Name column");
   const cols = rows[hi].map(h => MAP[key(h)] || null), seen = new Set(), out = [];
@@ -576,7 +577,7 @@ function rowsToContacts(rows){
     const name = clean(o.name); if (!name) continue;
     let pr = o.priority && typeof o.priority === "object" ? Math.round(o.priority.n) : parseInt(clean(o.priority), 10); if (isNaN(pr)) pr = 9;
     out.push({id: newId(), name, company: clean(o.company), email: clean(o.email), phone: fmtPhone(clean(o.phone)), priority: pr, nextDate: toIsoDate(o.nextDate),
-      nextAction: clean(o.nextAction), lastInteraction: clean(o.lastInteraction), history: clean(o.history), updated: toIsoStamp(o.updated)});
+      nextAction: clean(o.nextAction), lastInteraction: clean(o.lastInteraction), role: clean(o.role), history: clean(o.history), updated: toIsoStamp(o.updated)});
   }
   return out;
 }
