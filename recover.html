@@ -81,7 +81,7 @@ $("#scan").onclick = async () => {
       const p = maps[k-1].get(c.id); if (!p || ident(p) === ident(c) || isCopy(c, c.id)) continue;
       for (const [f, label] of TEXTF) if (String(p[f] ?? "").trim() !== String(c[f] ?? "").trim()) audit.push({id: c.id, who: c.name, f, label, old: p[f] ?? "", nw: c[f] ?? "", when: commits[k].commit.author.date});
     }
-    window.__audit = audit;
+    window.__audit = audit; window.__maps = maps; window.__commits = commits;
     const latest = await fileAt(null), now = new Map(latest.data.contacts.map(c => [c.id, c]));
     const everSeen = new Map(); vers.forEach(v => v.data.contacts.forEach(c => everSeen.set(c.id, c)));
     const missing = [...everSeen.values()].filter(c => !now.has(c.id));
@@ -115,6 +115,18 @@ $("#scan").onclick = async () => {
   $("#scan").disabled = false;
 };
 
+function recordHistory(){          // every change, version by version, for contacts that look wrong (overwritten, identical, or sharing a name)
+  const maps = window.__maps, commits = window.__commits, latest = window.__report.latest.data.contacts, want = new Set(FOUND.map(e => e.id));
+  const byName = new Map(); latest.forEach(c => { const k = String(c.name || "").trim().toLowerCase(); byName.set(k, (byName.get(k) || []).concat(c.id)); });
+  byName.forEach(ids => { if (ids.length > 1) ids.forEach(i => want.add(i)); });
+  window.__report.dupes.forEach(g => g.forEach(c => want.add(c.id)));
+  const out = [];
+  for (const id of want) { let prev = null;
+    for (let k = 0; k < maps.length; k++) { const r = maps[k].get(id); if (!r) continue;
+      if (!prev || full(prev) !== full(r)) out.push({"Contact id": id, Version: k, When: commits[k].commit.author.date, Name: r.name, Company: r.company, Email: r.email, Phone: r.phone, Priority: r.priority, "Next date": r.nextDate || "", "Next action": r.nextAction, "Last interaction": r.lastInteraction, History: r.history, Event: prev ? "changed" : "first appears"});
+      prev = r; } }
+  return out.sort((a, b) => a["Contact id"] < b["Contact id"] ? -1 : a["Contact id"] > b["Contact id"] ? 1 : a.Version - b.Version);
+}
 function excelReport(){
   if (!window.XLSX) { $("#state").textContent = "The Excel library could not load (are you online?)."; return; }
   const R = window.__report, fm = finalMap(), picked = new Set([...document.querySelectorAll(".pick:checked")].map(x => FOUND[+x.dataset.i].id));
@@ -125,6 +137,7 @@ function excelReport(){
       {Item: "Contacts missing vs older versions", Value: R.missing.length}, {Item: "Groups of identical contacts now", Value: R.dupes.length}, {Item: "Text edits found in history", Value: window.__audit.length}],
     Overwritten: FOUND.map(e => ({"Contact id": e.id, "Overwritten on": e.when, "Ticked to restore": picked.has(e.id) ? "yes" : "no", "Has unique text typed afterwards": e.editedAfter ? "YES - review" : "no", ...row(e.now, "NOW: "), ...row(e.good, "RESTORE TO: ")})),
     "Text edits": window.__audit.map(a => ({When: a.when, "Contact id": a.id, Contact: a.who, Field: a.label, "Old value": a.old, "New value": a.nw, "Survives repair": (() => { const f = fm.get(a.id); return f && String(f[a.f] ?? "").trim() === String(a.nw ?? "").trim() ? "yes" : "NO (or superseded by a later edit)"; })()})),
+    "Record history": recordHistory(),
     Missing: R.missing.map(c => ({"Contact id": c.id, ...row(c, "")})),
     Identical: R.dupes.flatMap((g, i) => g.map(c => ({Group: i + 1, "Contact id": c.id, ...row(c, "")}))),
     "All contacts now": R.latest.data.contacts.map(c => ({"Contact id": c.id, ...row(c, ""), Updated: c.updated}))
