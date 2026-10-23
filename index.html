@@ -469,22 +469,32 @@ function openForm(id, ids, draft){
     if (n.priority === 9 && !n.company) n.company = n.name;
     return n; };
   const changedFrom = n => isNew || Object.keys(n).some(k => (n[k] ?? "") !== (c[k] ?? ""));
-  const saveForm = async () => {          // true = saved or nothing to save; false = stay on this contact
-    if (!g("#f").reportValidity()) return false;
-    const n = collect(); if (!n.name) return false;
-    if (!changedFrom(n)) return true;
-    return await mutate(d => { let x = d.contacts.find(z => z.id === c.id); if (!x) { x = {id: c.id}; d.contacts.push(x); } Object.assign(x, n, {updated: nowIso()}); }); };
+  let inflight = null;                    // a save that has been sent but not confirmed yet
+  const saveForm = () => {                // true = saved or nothing to save; false = stay on this contact
+    if (inflight) return inflight;
+    inflight = (async () => {
+      try {
+        if (!g("#f").reportValidity()) return false;
+        const n = collect(); if (!n.name) return false;   // values are read ONCE, before any waiting
+        if (!changedFrom(n)) return true;
+        g("#fSave").disabled = true;
+        const okSave = await mutate(d => { let x = d.contacts.find(z => z.id === c.id); if (!x) { x = {id: c.id}; d.contacts.push(x); } Object.assign(x, n, {updated: nowIso()}); });
+        if (okSave) Object.assign(c, n);
+        return okSave;
+      } finally { inflight = null; const sb = g("#fSave"); if (sb && !S.readOnly) sb.disabled = false; }
+    })();
+    return inflight; };
   g("#f").onsubmit = async e => { e.preventDefault(); if (S.readOnly) return;       // Save keeps the window open; Close / Esc closes it
     if (!(await saveForm())) return;
     toast("Saved");
-    if (isNew) { const nid = c.id; dlg.close(); openForm(nid, [nid]); }            // a new contact becomes a normal one in the same window
-    else Object.assign(c, collect()); };
+    if (isNew) { const nid = c.id; dlg.close(); openForm(nid, [nid]); } };           // a new contact becomes a normal one in the same window
   if (showNav) { const go = async step => {   // Prev/Next: save any edits first, then open the neighbour in the displayed order
       if (!(await resolveEdits())) return;
       dlg.close(); openForm(ids[idx + step], ids); };
     g("#navPrev").onclick = () => go(-1); g("#navNext").onclick = () => go(1); }
   const isDirty = () => { const n = collect(); return isNew ? !!(n.name || n.company || n.email || n.phone || n.nextAction || n.lastInteraction || n.history || n.nextDate) : changedFrom(n); };
   const resolveEdits = async () => {        // true = OK to leave this form, false = stay
+    if (inflight && !(await inflight)) return false;      // let a pending save finish first
     if (S.readOnly || !isDirty()) return true;
     const a = await askChoice(c.name || ""); if (a === "keep") return false;
     if (a === "save") return await saveForm();
