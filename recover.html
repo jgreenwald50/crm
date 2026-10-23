@@ -2,6 +2,7 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Contacts – Repair</title>
 <script src="config.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root{--bg:#f6f1e6;--card:#fffdf8;--ink:#1c2740;--mute:#657089;--line:#ddd3bf;--accent:#1f3a63;--bad:#b91c1c;--ok:#15803d;--warn-bg:#f3e8c8}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,"Segoe UI",Roboto,sans-serif}
@@ -67,10 +68,20 @@ $("#scan").onclick = async () => {
       }
     }
     const maps = vers.map(v => byId(v.data));
-    for (const e of events.values()) {                       // was the damaged record edited again afterwards? (then a plain restore could lose that edit)
-      const atK = full(maps[e.version].get(e.id));
-      for (let j = e.version + 1; j < maps.length; j++) { const a = maps[j].get(e.id); if (a && full(a) !== atK) { e.editedAfter = true; e.laterRec = a; break; } }
+    const owners = new Map();                                // text-content -> ids that ever had exactly that content
+    vers.forEach(v => v.data.contacts.forEach(c => { const k = ident(c); if (!owners.has(k)) owners.set(k, new Set()); owners.get(k).add(c.id); }));
+    const isCopy = (rec, id) => { const o = owners.get(ident(rec)); return !!o && [...o].some(x => x !== id); };
+    for (const e of events.values()) {                       // did anyone type NEW text into the damaged record afterwards? (copies of other contacts don't count)
+      const goodKey = ident(e.good);
+      for (let j = e.version; j < maps.length; j++) { const a = maps[j].get(e.id); if (a && ident(a) !== goodKey && !isCopy(a, e.id)) { e.editedAfter = true; break; } }
     }
+    const TEXTF = [["name","Name"],["company","Company"],["email","Email"],["phone","Phone"],["nextAction","Next action"],["lastInteraction","Last interaction"],["history","History"]];
+    const audit = [];                                        // every genuine (non-copy) text edit in the whole history
+    for (let k = 1; k < vers.length; k++) for (const c of vers[k].data.contacts) {
+      const p = maps[k-1].get(c.id); if (!p || ident(p) === ident(c) || isCopy(c, c.id)) continue;
+      for (const [f, label] of TEXTF) if (String(p[f] ?? "").trim() !== String(c[f] ?? "").trim()) audit.push({id: c.id, who: c.name, f, label, old: p[f] ?? "", nw: c[f] ?? "", when: commits[k].commit.author.date});
+    }
+    window.__audit = audit;
     const latest = await fileAt(null), now = new Map(latest.data.contacts.map(c => [c.id, c]));
     const everSeen = new Map(); vers.forEach(v => v.data.contacts.forEach(c => everSeen.set(c.id, c)));
     const missing = [...everSeen.values()].filter(c => !now.has(c.id));
@@ -84,14 +95,19 @@ $("#scan").onclick = async () => {
     if (FOUND.length) {
       html += `<p>Tick the ones to restore (all ticked by default). Red = what is saved now, green = what will be put back.</p><table><tr><th></th><th>Overwritten on</th><th>Now (wrong)</th><th>Restore to</th></tr>` +
         FOUND.map((e, i) => `<tr><td><input type="checkbox" class="pick" data-i="${i}" ${e.editedAfter ? "" : "checked"}></td><td>${esc(new Date(e.when).toLocaleString())}</td>
-          <td class="cur">${esc(e.now.name)}<br><small>${esc(e.now.company)} ${esc(e.now.email)}</small>${e.editedAfter ? `<br><b>⚠ changed again after the overwrite, not ticked: review with Claude first</b>
+          <td class="cur">${esc(e.now.name)}<br><small>${esc(e.now.company)} ${esc(e.now.email)}</small>${e.editedAfter ? `<br><b>⚠ has text that exists nowhere else, not ticked: review with Claude first</b>
             <br><small>Saved now: priority ${esc(e.now.priority)}, date ${esc(e.now.nextDate || "none")}<br>Next action: ${esc(e.now.nextAction)}<br>Last interaction: ${esc(String(e.now.lastInteraction || "").slice(0, 300))}<br>History: ${esc(String(e.now.history || "").slice(0, 300))}</small>` : ""}</td>
           <td class="fix">${esc(e.good.name)}<br><small>${esc(e.good.company)} ${esc(e.good.email)} ${esc(e.good.phone)}${e.good.nextDate ? " · next " + esc(e.good.nextDate) : " · no date"}</small>${e.editedAfter ? `<br><small>Priority ${esc(e.good.priority)}<br>Next action: ${esc(e.good.nextAction)}<br>Last interaction: ${esc(String(e.good.lastInteraction || "").slice(0, 300))}<br>History: ${esc(String(e.good.history || "").slice(0, 300))}</small>` : ""}</td></tr>`).join("") + `</table>
         <p><button class="btn" id="dl">Download a copy of today's data first</button> <button class="btn primary" id="apply">2. Restore the ticked contacts</button></p>`;
     } else html += `<p>No overwritten contacts were found in the saved history.</p>`;
     if (missing.length) html += `<div class="box warn"><b>Contacts found in older versions but missing now:</b><ul>${missing.slice(0, 80).map(c => `<li>${esc(c.name)} ${esc(c.company)}</li>`).join("")}</ul><p><button class="btn" id="addMissing">Add these back too</button></p></div>`;
     if (dupes.length) html += `<details class="box"><summary>Identical contacts still in your data (${dupes.length} groups)</summary><ul>${dupes.slice(0, 60).map(g => `<li>${esc(g[0].name)} × ${g.length}</li>`).join("")}</ul></details>`;
+    html += `<p><button class="btn" id="xl">Download Excel report (to send to Claude)</button></p><div class="box" id="auditBox"></div>`;
     $("#result").innerHTML = html; $("#state").textContent = "Scan finished.";
+    window.__renderAudit = renderAudit; renderAudit();
+    window.__report = {latest, dupes, missing, commits};
+    $("#xl").onclick = excelReport;
+    document.querySelectorAll(".pick").forEach(x => x.onchange = renderAudit);
     const dl = $("#dl"); if (dl) dl.onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(latest.data, null, 1)], {type: "application/json"})); a.download = "crm_before_repair.json"; a.click(); };
     const ap = $("#apply"); if (ap) ap.onclick = apply;
     const am = $("#addMissing"); if (am) am.onclick = () => { window.__addMissing = true; am.textContent = "Will be added back when you press Restore"; am.disabled = true; if (!$("#apply")) $("#result").insertAdjacentHTML("beforeend", `<p><button class="btn primary" id="apply2">Restore</button></p>`), $("#apply2").onclick = apply; };
@@ -99,6 +115,42 @@ $("#scan").onclick = async () => {
   $("#scan").disabled = false;
 };
 
+function excelReport(){
+  if (!window.XLSX) { $("#state").textContent = "The Excel library could not load (are you online?)."; return; }
+  const R = window.__report, fm = finalMap(), picked = new Set([...document.querySelectorAll(".pick:checked")].map(x => FOUND[+x.dataset.i].id));
+  const row = (c, p) => ({[p+"Name"]: c.name, [p+"Company"]: c.company, [p+"Email"]: c.email, [p+"Phone"]: c.phone, [p+"Priority"]: c.priority, [p+"Next date"]: c.nextDate || "", [p+"Next action"]: c.nextAction, [p+"Last interaction"]: c.lastInteraction, [p+"History"]: c.history});
+  const sheets = {
+    Summary: [{Item: "Saved versions scanned", Value: R.commits.length}, {Item: "First version", Value: R.commits[0].commit.author.date}, {Item: "Last version", Value: R.commits.at(-1).commit.author.date},
+      {Item: "Contacts now", Value: R.latest.data.contacts.length}, {Item: "Overwritten contacts found", Value: FOUND.length}, {Item: "Ticked for restore", Value: picked.size},
+      {Item: "Contacts missing vs older versions", Value: R.missing.length}, {Item: "Groups of identical contacts now", Value: R.dupes.length}, {Item: "Text edits found in history", Value: window.__audit.length}],
+    Overwritten: FOUND.map(e => ({"Contact id": e.id, "Overwritten on": e.when, "Ticked to restore": picked.has(e.id) ? "yes" : "no", "Has unique text typed afterwards": e.editedAfter ? "YES - review" : "no", ...row(e.now, "NOW: "), ...row(e.good, "RESTORE TO: ")})),
+    "Text edits": window.__audit.map(a => ({When: a.when, "Contact id": a.id, Contact: a.who, Field: a.label, "Old value": a.old, "New value": a.nw, "Survives repair": (() => { const f = fm.get(a.id); return f && String(f[a.f] ?? "").trim() === String(a.nw ?? "").trim() ? "yes" : "NO (or superseded by a later edit)"; })()})),
+    Missing: R.missing.map(c => ({"Contact id": c.id, ...row(c, "")})),
+    Identical: R.dupes.flatMap((g, i) => g.map(c => ({Group: i + 1, "Contact id": c.id, ...row(c, "")}))),
+    "All contacts now": R.latest.data.contacts.map(c => ({"Contact id": c.id, ...row(c, ""), Updated: c.updated}))
+  };
+  const wb = XLSX.utils.book_new();
+  for (const [name, rows] of Object.entries(sheets)) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{Note: "none"}]), name);
+  XLSX.writeFile(wb, "crm_repair_report.xlsx");
+}
+function finalMap(){
+  const m = new Map(window.__latest.data.contacts.map(c => [c.id, c]));
+  document.querySelectorAll(".pick:checked").forEach(x => { const e = FOUND[+x.dataset.i]; if (m.has(e.id)) m.set(e.id, e.good); });
+  if (window.__addMissing) window.__missing.forEach(c => { if (!m.has(c.id)) m.set(c.id, c); });
+  return m; }
+function renderAudit(){
+  const box = $("#auditBox"); if (!box) return; const fm = finalMap();
+  const last = new Map(); window.__audit.forEach(a => last.set(a.id + "|" + a.f, a));          // only the newest edit of each field must survive
+  const lost = [], kept = [];
+  for (const a of window.__audit) { const fin = fm.get(a.id), want = last.get(a.id + "|" + a.f);
+    const ok = fin && String(fin[want.f] ?? "").trim() === String(want.nw ?? "").trim(); (ok ? kept : lost).push({...a, ok, shouldBe: want.nw, finalNow: fin ? fin[a.f] : "(contact missing)"}); }
+  const shown = x => esc(String(x ?? "").slice(0, 160));
+  const seenL = new Set(), lostRows = lost.filter(a => { const k = a.id + "|" + a.f; if (seenL.has(k)) return false; seenL.add(k); return true; });
+  box.innerHTML = `<b>Edit check:</b> ${window.__audit.length} edits to names, notes, history and other text were found in all saved versions. ` +
+    (lostRows.length ? `<b class="cur">${lostRows.length} would NOT survive the repair as ticked — review these:</b><table><tr><th>Contact</th><th>Field</th><th>Your newest edit</th><th>Would end up as</th></tr>${lostRows.map(a => `<tr><td>${esc(a.who)}</td><td>${esc(a.label)}</td><td class="fix">${shown(a.shouldBe)}</td><td class="cur">${shown(a.finalNow)}</td></tr>`).join("")}</table>`
+      : `<b class="fix">every one of them survives the repair as ticked.</b>`) +
+    `<details><summary>Show all ${window.__audit.length} edits found</summary><table><tr><th>When</th><th>Contact</th><th>Field</th><th>Changed to</th></tr>${window.__audit.map(a => `<tr><td>${esc(new Date(a.when).toLocaleString())}</td><td>${esc(a.who)}</td><td>${esc(a.label)}</td><td>${shown(a.nw)}</td></tr>`).join("")}</table></details>`;
+}
 async function apply(){
   const picks = [...document.querySelectorAll(".pick:checked")].map(x => FOUND[+x.dataset.i]); if (!picks.length && !window.__addMissing) return;
   [...document.querySelectorAll("#apply,#apply2")].forEach(x => x.disabled = true); $("#state").textContent = "Restoring…";
