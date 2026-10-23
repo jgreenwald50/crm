@@ -59,7 +59,8 @@ $("#scan").onclick = async () => {
     const events = new Map();                                // id -> first damage event
     for (let k = 1; k < vers.length; k++) {
       const prev = byId(vers[k-1].data), cur = vers[k].data.contacts, curIdents = new Map();
-      cur.forEach(c => { const key = ident(c); if (!curIdents.has(key)) curIdents.set(key, []); curIdents.get(key).push(c); });
+      // copies can match what another contact held a moment ago (if that contact was edited in the same save), so look at both versions
+      [...cur, ...vers[k-1].data.contacts].forEach(c => { const key = ident(c); if (!curIdents.has(key)) curIdents.set(key, []); curIdents.get(key).push(c); });
       for (const c of cur) {
         const p = prev.get(c.id); if (!p || ident(p) === ident(c) || events.has(c.id)) continue;
         const twins = (curIdents.get(ident(c)) || []).filter(x => x.id !== c.id);
