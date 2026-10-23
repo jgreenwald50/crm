@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Contacts – Repair</title>
+<script src="config.js"></script>
+<style>
+:root{--bg:#f6f1e6;--card:#fffdf8;--ink:#1c2740;--mute:#657089;--line:#ddd3bf;--accent:#1f3a63;--bad:#b91c1c;--ok:#15803d;--warn-bg:#f3e8c8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,"Segoe UI",Roboto,sans-serif}
+main{max-width:980px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:22px;margin:0 0 4px}p{margin:6px 0}.mute{color:var(--mute)}
+.btn{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:8px 14px;font:inherit;cursor:pointer}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}.btn:disabled{opacity:.5;cursor:not-allowed}
+.box{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:12px 0}
+.warn{background:var(--warn-bg)}
+table{width:100%;border-collapse:collapse;font-size:13.5px}th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+th{background:#ebe3d0}.cur{color:var(--bad)}.fix{color:var(--ok)}
+#log{white-space:pre-wrap;font-size:13px;color:var(--mute)}
+</style></head><body><main>
+<h1>Contacts – Repair tool</h1>
+<p class="mute">Finds contacts that were overwritten by another contact's details (the Save + Next bug) and restores them from the saved history. Nothing changes until you press <b>Restore</b>.</p>
+<div class="box warn"><b>Before you start:</b> close the Contacts app on your phone and in any other tab or window, so nothing else is saving.</div>
+<p><button class="btn primary" id="scan">1. Scan history</button> <span id="state" class="mute"></span></p>
+<div id="log"></div>
+<div id="result"></div>
+</main>
+<script>
+const REPO = (window.CRM_CONFIG && window.CRM_CONFIG.GITHUB_REPO) || "";
+const TOKEN = (() => { try { return localStorage.getItem("crm.ghtoken") || ""; } catch(e){ return ""; } })();
+const $ = s => document.querySelector(s), esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const log = t => { $("#log").textContent += t + "\n"; };
+async function api(path, opts = {}){
+  const r = await fetch("https://api.github.com/repos/" + REPO + path, {...opts, cache: "no-store", headers: {Accept: "application/vnd.github+json", Authorization: "Bearer " + TOKEN, ...(opts.headers||{})}});
+  return r; }
+const dec = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\n/g, "")), c => c.charCodeAt(0)));
+const enc = str => { const b = new TextEncoder().encode(str); let s = ""; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(s); };
+async function fileAt(ref){
+  const r = await api("/contents/crm.json" + (ref ? "?ref=" + ref : "")); if (!r.ok) throw new Error("GitHub " + r.status);
+  const j = await r.json(); let text;
+  if (j.content) text = dec(j.content); else { const b = await api("/git/blobs/" + j.sha); text = dec((await b.json()).content); }
+  return {data: JSON.parse(text), sha: j.sha}; }
+const ident = c => [c.name, c.company, c.email, c.phone, c.nextAction, c.lastInteraction, c.history].map(x => String(x ?? "").trim().toLowerCase()).join("¦");
+let FOUND = [];
+
+$("#scan").onclick = async () => {
+  if (!REPO || !TOKEN) { $("#state").textContent = "Open the Contacts app once on this computer first, so it can sign in."; return; }
+  $("#scan").disabled = true; $("#result").innerHTML = ""; $("#log").textContent = ""; FOUND = [];
+  try {
+    $("#state").textContent = "Listing saved versions…";
+    let commits = [];
+    for (let page = 1; page <= 10; page++) { const r = await api("/commits?path=crm.json&per_page=100&page=" + page); if (!r.ok) throw new Error("GitHub " + r.status); const j = await r.json(); commits.push(...j); if (j.length < 100) break; }
+    commits.reverse();                                       // oldest first
+    log("Found " + commits.length + " saved versions (" + new Date(commits[0].commit.author.date).toLocaleString() + " to " + new Date(commits.at(-1).commit.author.date).toLocaleString() + ").");
+    const vers = new Array(commits.length); let done = 0, next = 0;
+    const worker = async () => { while (next < commits.length) { const i = next++; vers[i] = await fileAt(commits[i].sha); done++; if (done % 10 === 0) $("#state").textContent = "Reading versions… " + done + " of " + commits.length; } };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    $("#state").textContent = "Comparing…";
+    const byId = d => new Map(d.contacts.map(c => [c.id, c]));
+    const events = new Map();                                // id -> first damage event
+    for (let k = 1; k < vers.length; k++) {
+      const prev = byId(vers[k-1].data), cur = vers[k].data.contacts, curIdents = new Map();
+      cur.forEach(c => { const key = ident(c); if (!curIdents.has(key)) curIdents.set(key, []); curIdents.get(key).push(c); });
+      for (const c of cur) {
+        const p = prev.get(c.id); if (!p || ident(p) === ident(c) || events.has(c.id)) continue;
+        const twins = (curIdents.get(ident(c)) || []).filter(x => x.id !== c.id);
+        const twin = twins.find(x => ident(x) !== ident(p));
+        if (twin) events.set(c.id, {id: c.id, good: p, version: k, when: commits[k].commit.author.date, copiedFrom: twin.name});
+      }
+    }
+    const latest = await fileAt(null), now = new Map(latest.data.contacts.map(c => [c.id, c]));
+    FOUND = [...events.values()].filter(e => now.has(e.id) && ident(now.get(e.id)) !== ident(e.good)).map(e => ({...e, now: now.get(e.id)}));
+    window.__latest = latest;
+    // current exact duplicates for information
+    const groups = new Map(); latest.data.contacts.forEach(c => { const k = ident(c); groups.set(k, (groups.get(k) || []).concat(c)); });
+    const dupes = [...groups.values()].filter(g => g.length > 1);
+    let html = `<div class="box"><b>${latest.data.contacts.length}</b> contacts now. <b>${FOUND.length}</b> look overwritten and can be restored. ${dupes.length} groups of identical contacts remain.</div>`;
+    if (FOUND.length) {
+      html += `<p>Tick the ones to restore (all ticked by default). Red = what is saved now, green = what will be put back.</p><table><tr><th></th><th>Overwritten on</th><th>Now (wrong)</th><th>Restore to</th></tr>` +
+        FOUND.map((e, i) => `<tr><td><input type="checkbox" class="pick" data-i="${i}" checked></td><td>${esc(new Date(e.when).toLocaleString())}</td>
+          <td class="cur">${esc(e.now.name)}<br><small>${esc(e.now.company)} ${esc(e.now.email)}</small></td>
+          <td class="fix">${esc(e.good.name)}<br><small>${esc(e.good.company)} ${esc(e.good.email)} ${esc(e.good.phone)}${e.good.nextDate ? " · next " + esc(e.good.nextDate) : " · no date"}</small></td></tr>`).join("") + `</table>
+        <p><button class="btn" id="dl">Download a copy of today's data first</button> <button class="btn primary" id="apply">2. Restore the ticked contacts</button></p>`;
+    } else html += `<p>No overwritten contacts were found in the saved history.</p>`;
+    if (dupes.length) html += `<details class="box"><summary>Identical contacts still in your data (${dupes.length} groups)</summary><ul>${dupes.slice(0, 60).map(g => `<li>${esc(g[0].name)} × ${g.length}</li>`).join("")}</ul></details>`;
+    $("#result").innerHTML = html; $("#state").textContent = "Scan finished.";
+    const dl = $("#dl"); if (dl) dl.onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(latest.data, null, 1)], {type: "application/json"})); a.download = "crm_before_repair.json"; a.click(); };
+    const ap = $("#apply"); if (ap) ap.onclick = apply;
+  } catch (e) { $("#state").textContent = "Problem: " + e.message; }
+  $("#scan").disabled = false;
+};
+
+async function apply(){
+  const picks = [...document.querySelectorAll(".pick:checked")].map(x => FOUND[+x.dataset.i]); if (!picks.length) return;
+  $("#apply").disabled = true; $("#state").textContent = "Restoring…";
+  try {
+    const f = await fileAt(null), map = new Map(f.data.contacts.map(c => [c.id, c])); let n = 0;
+    for (const e of picks) { const c = map.get(e.id); if (c) { Object.keys(c).forEach(k => delete c[k]); Object.assign(c, e.good, {updated: new Date().toISOString()}); n++; } }
+    f.data.rev = (f.data.rev || 0) + 1;
+    const r = await api("/contents/crm.json", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({message: "Repair: restored " + n + " overwritten contacts", content: enc(JSON.stringify(f.data, null, 1)), sha: f.sha})});
+    if (!r.ok) throw new Error("GitHub save failed (" + r.status + "). Close other Contacts windows and try again.");
+    $("#state").textContent = "Done. Restored " + n + " contacts. Reload the Contacts app (Ctrl+Shift+R) to see them.";
+    $("#result").innerHTML = `<div class="box"><b>Restored ${n} contacts.</b> Open the Contacts app and press Ctrl+Shift+R.</div>`;
+  } catch (e) { $("#state").textContent = "Problem: " + e.message; $("#apply").disabled = false; }
+}
+</script></body></html>
