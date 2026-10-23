@@ -65,39 +65,50 @@ $("#scan").onclick = async () => {
         if (twin) events.set(c.id, {id: c.id, good: p, version: k, when: commits[k].commit.author.date, copiedFrom: twin.name});
       }
     }
+    const maps = vers.map(v => byId(v.data));
+    for (const e of events.values()) {                       // was the damaged record edited again afterwards? (then a plain restore could lose that edit)
+      const atK = ident(maps[e.version].get(e.id));
+      for (let j = e.version + 1; j < maps.length; j++) { const a = maps[j].get(e.id); if (a && ident(a) !== atK) { e.editedAfter = true; break; } }
+    }
     const latest = await fileAt(null), now = new Map(latest.data.contacts.map(c => [c.id, c]));
+    const everSeen = new Map(); vers.forEach(v => v.data.contacts.forEach(c => everSeen.set(c.id, c)));
+    const missing = [...everSeen.values()].filter(c => !now.has(c.id));
     FOUND = [...events.values()].filter(e => now.has(e.id) && ident(now.get(e.id)) !== ident(e.good)).map(e => ({...e, now: now.get(e.id)}));
     window.__latest = latest;
     // current exact duplicates for information
     const groups = new Map(); latest.data.contacts.forEach(c => { const k = ident(c); groups.set(k, (groups.get(k) || []).concat(c)); });
     const dupes = [...groups.values()].filter(g => g.length > 1);
-    let html = `<div class="box"><b>${latest.data.contacts.length}</b> contacts now. <b>${FOUND.length}</b> look overwritten and can be restored. ${dupes.length} groups of identical contacts remain.</div>`;
+    window.__missing = missing;
+    let html = `<div class="box"><b>${latest.data.contacts.length}</b> contacts now; ${missing.length ? `<b class="cur">${missing.length} contacts that existed before are missing</b>` : `<b class="fix">none missing compared with every earlier version</b>`}. <b>${FOUND.length}</b> look overwritten and can be restored. ${dupes.length} groups of identical contacts remain.</div>`;
     if (FOUND.length) {
       html += `<p>Tick the ones to restore (all ticked by default). Red = what is saved now, green = what will be put back.</p><table><tr><th></th><th>Overwritten on</th><th>Now (wrong)</th><th>Restore to</th></tr>` +
-        FOUND.map((e, i) => `<tr><td><input type="checkbox" class="pick" data-i="${i}" checked></td><td>${esc(new Date(e.when).toLocaleString())}</td>
-          <td class="cur">${esc(e.now.name)}<br><small>${esc(e.now.company)} ${esc(e.now.email)}</small></td>
+        FOUND.map((e, i) => `<tr><td><input type="checkbox" class="pick" data-i="${i}" ${e.editedAfter ? "" : "checked"}></td><td>${esc(new Date(e.when).toLocaleString())}</td>
+          <td class="cur">${esc(e.now.name)}<br><small>${esc(e.now.company)} ${esc(e.now.email)}</small>${e.editedAfter ? `<br><b>⚠ edited again after the overwrite, not ticked: review with Claude first</b>` : ""}</td>
           <td class="fix">${esc(e.good.name)}<br><small>${esc(e.good.company)} ${esc(e.good.email)} ${esc(e.good.phone)}${e.good.nextDate ? " · next " + esc(e.good.nextDate) : " · no date"}</small></td></tr>`).join("") + `</table>
         <p><button class="btn" id="dl">Download a copy of today's data first</button> <button class="btn primary" id="apply">2. Restore the ticked contacts</button></p>`;
     } else html += `<p>No overwritten contacts were found in the saved history.</p>`;
+    if (missing.length) html += `<div class="box warn"><b>Contacts found in older versions but missing now:</b><ul>${missing.slice(0, 80).map(c => `<li>${esc(c.name)} ${esc(c.company)}</li>`).join("")}</ul><p><button class="btn" id="addMissing">Add these back too</button></p></div>`;
     if (dupes.length) html += `<details class="box"><summary>Identical contacts still in your data (${dupes.length} groups)</summary><ul>${dupes.slice(0, 60).map(g => `<li>${esc(g[0].name)} × ${g.length}</li>`).join("")}</ul></details>`;
     $("#result").innerHTML = html; $("#state").textContent = "Scan finished.";
     const dl = $("#dl"); if (dl) dl.onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(latest.data, null, 1)], {type: "application/json"})); a.download = "crm_before_repair.json"; a.click(); };
     const ap = $("#apply"); if (ap) ap.onclick = apply;
+    const am = $("#addMissing"); if (am) am.onclick = () => { window.__addMissing = true; am.textContent = "Will be added back when you press Restore"; am.disabled = true; if (!$("#apply")) $("#result").insertAdjacentHTML("beforeend", `<p><button class="btn primary" id="apply2">Restore</button></p>`), $("#apply2").onclick = apply; };
   } catch (e) { $("#state").textContent = "Problem: " + e.message; }
   $("#scan").disabled = false;
 };
 
 async function apply(){
-  const picks = [...document.querySelectorAll(".pick:checked")].map(x => FOUND[+x.dataset.i]); if (!picks.length) return;
-  $("#apply").disabled = true; $("#state").textContent = "Restoring…";
+  const picks = [...document.querySelectorAll(".pick:checked")].map(x => FOUND[+x.dataset.i]); if (!picks.length && !window.__addMissing) return;
+  [...document.querySelectorAll("#apply,#apply2")].forEach(x => x.disabled = true); $("#state").textContent = "Restoring…";
   try {
     const f = await fileAt(null), map = new Map(f.data.contacts.map(c => [c.id, c])); let n = 0;
     for (const e of picks) { const c = map.get(e.id); if (c) { Object.keys(c).forEach(k => delete c[k]); Object.assign(c, e.good, {updated: new Date().toISOString()}); n++; } }
+    if (window.__addMissing) for (const c of window.__missing) if (!map.has(c.id)) { f.data.contacts.push(c); n++; }
     f.data.rev = (f.data.rev || 0) + 1;
     const r = await api("/contents/crm.json", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({message: "Repair: restored " + n + " overwritten contacts", content: enc(JSON.stringify(f.data, null, 1)), sha: f.sha})});
     if (!r.ok) throw new Error("GitHub save failed (" + r.status + "). Close other Contacts windows and try again.");
     $("#state").textContent = "Done. Restored " + n + " contacts. Reload the Contacts app (Ctrl+Shift+R) to see them.";
     $("#result").innerHTML = `<div class="box"><b>Restored ${n} contacts.</b> Open the Contacts app and press Ctrl+Shift+R.</div>`;
-  } catch (e) { $("#state").textContent = "Problem: " + e.message; $("#apply").disabled = false; }
+  } catch (e) { $("#state").textContent = "Problem: " + e.message; [...document.querySelectorAll("#apply,#apply2")].forEach(x => x.disabled = false); }
 }
 </script></body></html>
